@@ -1,3 +1,7 @@
+import { parseSmilePlan, parseGeneratedSmileDesign } from "../cases/caseValidators";
+import type { SmilePlan } from "../smile-plan/smilePlanTypes";
+import type { GeneratedSmileDesign } from "../engine/designEngine";
+
 /**
  * Package a case into a downloadable .smilegen file.
  * Format: JSON file containing case metadata and base64-encoded assets.
@@ -66,6 +70,47 @@ export function packageCase(caseData: {
       designJson: caseData.design ? JSON.stringify(caseData.design) : null
     },
     assets
+  };
+}
+
+export interface UnpackedCase {
+  title: string;
+  workflowState: string;
+  plan: SmilePlan;
+  design: GeneratedSmileDesign | null;
+  assets: PackagedCase["assets"];
+}
+
+/**
+ * Parse and validate a .smilegen JSON string.
+ * Throws if the JSON is malformed or plan/design data fails Zod validation.
+ */
+export function unpackCase(jsonString: string): UnpackedCase {
+  const pkg = JSON.parse(jsonString) as PackagedCase;
+
+  let plan: SmilePlan;
+  try {
+    plan = parseSmilePlan(JSON.parse(pkg.case.planJson));
+  } catch (e) {
+    throw new Error(`Invalid plan data in .smilegen package: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  let design: GeneratedSmileDesign | null = null;
+  if (pkg.case.designJson) {
+    try {
+      design = parseGeneratedSmileDesign(JSON.parse(pkg.case.designJson)) as GeneratedSmileDesign;
+    } catch (e) {
+      console.error("Corrupted design data in .smilegen package, discarding:", e);
+      design = null;
+    }
+  }
+
+  return {
+    title: pkg.case.title,
+    workflowState: pkg.case.workflowState,
+    plan,
+    design,
+    assets: pkg.assets,
   };
 }
 
