@@ -1,4 +1,5 @@
 import type { MeshTriangle } from "../import/stlParser";
+import { computeNormal } from "../geometry/meshUtils";
 
 /**
  * Serialize triangles to binary STL format.
@@ -59,22 +60,3 @@ export function serializeToBinaryStl(
   return buffer;
 }
 
-function computeNormal(
-  a: { x: number; y: number; z: number },
-  b: { x: number; y: number; z: number },
-  c: { x: number; y: number; z: number }
-): { x: number; y: number; z: number } {
-  const ux = b.x - a.x;
-  const uy = b.y - a.y;
-  const uz = b.z - a.z;
-  const vx = c.x - a.x;
-  const vy = c.y - a.y;
-  const vz = c.z - a.z;
-
-  const nx = uy * vz - uz * vy;
-  const ny = uz * vx - ux * vz;
-  const nz = ux * vy - uy * vx;
-  const length = Math.hypot(nx, ny, nz) || 1;
-
-  return { x: nx / length, y: ny / length, z: nz / length };
-}

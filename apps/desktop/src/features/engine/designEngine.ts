@@ -3,6 +3,7 @@ import type { MeshTriangle, MeshVertex, ParsedStlMesh } from "../import/stlParse
 import type { ToothLibraryCollection } from "../library/toothLibraryTypes";
 import type { VariantLabel } from "./engineTypes";
 import { archDepthAtX, archTangentAngle, estimateArchFromScan } from "../alignment/archModel";
+import { computeNormal } from "../geometry/meshUtils";
 
 interface ToothPrototype {
   width: number;
@@ -674,25 +675,6 @@ function formatVertex(vertex: MeshVertex) {
   return `${round(vertex.x)} ${round(vertex.y)} ${round(vertex.z)}`;
 }
 
-function computeNormal(a: MeshVertex, b: MeshVertex, c: MeshVertex) {
-  const ux = b.x - a.x;
-  const uy = b.y - a.y;
-  const uz = b.z - a.z;
-  const vx = c.x - a.x;
-  const vy = c.y - a.y;
-  const vz = c.z - a.z;
-
-  const nx = uy * vz - uz * vy;
-  const ny = uz * vx - ux * vz;
-  const nz = ux * vy - uy * vx;
-  const length = Math.hypot(nx, ny, nz) || 1;
-
-  return {
-    x: round(nx / length),
-    y: round(ny / length),
-    z: round(nz / length)
-  };
-}
 
 function round(value: number) {
   return Number(value.toFixed(3));

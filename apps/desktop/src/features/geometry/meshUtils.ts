@@ -105,6 +105,21 @@ export function translateMesh(mesh: ParsedStlMesh, offset: MeshVertex): ParsedSt
   };
 }
 
+/** Compute the unit normal of a triangle given three vertices. */
+export function computeNormal(
+  a: MeshVertex,
+  b: MeshVertex,
+  c: MeshVertex
+): { x: number; y: number; z: number } {
+  const ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+  const vx = c.x - a.x, vy = c.y - a.y, vz = c.z - a.z;
+  const nx = uy * vz - uz * vy;
+  const ny = uz * vx - ux * vz;
+  const nz = ux * vy - uy * vx;
+  const length = Math.hypot(nx, ny, nz) || 1;
+  return { x: nx / length, y: ny / length, z: nz / length };
+}
+
 /** Check if two axis-aligned bounding boxes overlap */
 export function aabbOverlap(a: MeshBounds, b: MeshBounds): boolean {
   return (
