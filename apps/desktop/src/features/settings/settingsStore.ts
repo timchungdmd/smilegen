@@ -1,4 +1,5 @@
 import { DEFAULT_SETTINGS, type AppSettings } from "./settingsTypes";
+import { parseAppSettings } from "../cases/caseValidators";
 
 let currentSettings: AppSettings = { ...DEFAULT_SETTINGS };
 
@@ -19,8 +20,12 @@ export function loadSettings(): AppSettings {
   try {
     const stored = localStorage.getItem("smilegen-settings");
     if (stored) {
-      currentSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
+      const parsed = JSON.parse(stored);
+      currentSettings = parseAppSettings({ ...DEFAULT_SETTINGS, ...parsed });
     }
-  } catch { /* ignore */ }
+  } catch {
+    // Corrupted or outdated settings — fall back to defaults
+    currentSettings = { ...DEFAULT_SETTINGS };
+  }
   return currentSettings;
 }
