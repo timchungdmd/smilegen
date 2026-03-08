@@ -1,0 +1,8 @@
+{
+  "name": "smilegen",
+  "private": true,
+  "packageManager": "pnpm@10.7.0",
+  "scripts": {
+    "test": "pnpm --filter desktop test"
+  }
+}

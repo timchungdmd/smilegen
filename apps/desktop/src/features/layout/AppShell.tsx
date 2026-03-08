@@ -1,0 +1,100 @@
+import { useMemo, useCallback } from "react";
+import { useSmileStore } from "../../store/useSmileStore";
+import { useKeyboardShortcuts } from "../shortcuts/useKeyboardShortcuts";
+import { useDropZone } from "../import/useDropZone";
+import { Header } from "./Header";
+import { Sidebar } from "./Sidebar";
+import { Workspace } from "./Workspace";
+
+export function AppShell() {
+  const activeView = useSmileStore((s) => s.activeView);
+
+  // Global keyboard shortcuts
+  useKeyboardShortcuts();
+
+  // Global drag-and-drop file import
+  const handlePhotosSelected = useSmileStore((s) => s.handlePhotosSelected);
+  const handleArchScanSelected = useSmileStore((s) => s.handleArchScanSelected);
+  const handleToothModelsSelected = useSmileStore((s) => s.handleToothModelsSelected);
+
+  const onPhotos = useCallback(
+    (files: File[]) => {
+      const dt = new DataTransfer();
+      files.forEach((f) => dt.items.add(f));
+      handlePhotosSelected(dt.files);
+    },
+    [handlePhotosSelected]
+  );
+
+  const onArchScan = useCallback(
+    (file: File) => {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      handleArchScanSelected(dt.files);
+    },
+    [handleArchScanSelected]
+  );
+
+  const onToothModels = useCallback(
+    (files: File[]) => {
+      const dt = new DataTransfer();
+      files.forEach((f) => dt.items.add(f));
+      handleToothModelsSelected(dt.files);
+    },
+    [handleToothModelsSelected]
+  );
+
+  const dropHandlers = useMemo(
+    () => ({ onPhotos, onArchScan, onToothModels }),
+    [onPhotos, onArchScan, onToothModels]
+  );
+  const { isDragging } = useDropZone(dropHandlers);
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "var(--sidebar-width) 1fr",
+        gridTemplateRows: "var(--header-height) 1fr",
+        height: "100vh",
+        overflow: "hidden",
+        position: "relative"
+      }}
+    >
+      <Header />
+      <Sidebar activeView={activeView} />
+      <Workspace activeView={activeView} />
+
+      {/* Drag-and-drop overlay */}
+      {isDragging && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "rgba(0, 180, 216, 0.08)",
+            border: "3px dashed var(--accent)",
+            borderRadius: 8,
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "none"
+          }}
+        >
+          <div
+            style={{
+              background: "var(--bg-secondary)",
+              padding: "20px 40px",
+              borderRadius: 12,
+              fontSize: 16,
+              fontWeight: 600,
+              color: "var(--accent)"
+            }}
+          >
+            Drop files to import
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
