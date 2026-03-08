@@ -50,9 +50,12 @@ export function generateReportHtml(data: ReportData): string {
     })
     .join("");
 
-  const photoSection = data.patientPhotoUrl
+  const safePhotoUrl = data.patientPhotoUrl
+    ? escapeHtml(encodeURI(data.patientPhotoUrl))
+    : null;
+  const photoSection = safePhotoUrl
     ? `<div style="margin: 20px 0; text-align: center;">
-        <img src="${data.patientPhotoUrl}" alt="Patient photo"
+        <img src="${safePhotoUrl}" alt="Patient photo"
              style="max-width: 400px; max-height: 300px; border-radius: 8px; border: 1px solid #ddd;" />
       </div>`
     : "";
