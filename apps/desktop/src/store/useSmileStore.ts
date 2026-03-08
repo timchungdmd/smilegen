@@ -32,6 +32,7 @@ import {
   setTreatmentType
 } from "../features/smile-plan/smilePlanStore";
 import type { AdditiveBias, SmilePlan, SmilePlanControls, TreatmentType } from "../features/smile-plan/smilePlanTypes";
+import { parseSmilePlan, parseGeneratedSmileDesign } from "../features/cases/caseValidators";
 import { summarizeTrustState, type TrustSummary } from "../features/trust/trustEngine";
 import type { VariantSummary } from "../features/variants/variantStore";
 import { transitionCaseState } from "../features/workflow/workflowState";
@@ -670,10 +671,24 @@ export const useSmileStore = create<SmileStore>()(
     const saved = await loadCaseFromDb(id);
     if (!saved) return;
 
-    const plan = JSON.parse(saved.planJson) as SmilePlan;
-    const generatedDesign = saved.designJson
-      ? (JSON.parse(saved.designJson) as GeneratedSmileDesign)
-      : null;
+    let plan: SmilePlan;
+    try {
+      plan = parseSmilePlan(JSON.parse(saved.planJson));
+    } catch (e) {
+      console.error("Corrupted plan data in DB, using defaults:", e);
+      plan = createDefaultSmilePlan();
+    }
+
+    let generatedDesign: GeneratedSmileDesign | null = null;
+    if (saved.designJson) {
+      try {
+        generatedDesign = parseGeneratedSmileDesign(JSON.parse(saved.designJson)) as GeneratedSmileDesign;
+      } catch (e) {
+        console.error("Corrupted design data in DB, discarding:", e);
+        generatedDesign = null;
+      }
+    }
+
     const firstVariant = generatedDesign?.variants[1] ?? generatedDesign?.variants[0] ?? null;
 
     set({
