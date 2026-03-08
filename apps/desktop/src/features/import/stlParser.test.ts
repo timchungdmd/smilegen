@@ -68,6 +68,13 @@ test("falls back to binary parsing when header includes solid-like text", () => 
   expect(parsed.triangles).toHaveLength(1);
 });
 
+test("rejects binary STL claiming more than MAX_TRIANGLES", () => {
+  const buf = new ArrayBuffer(84);
+  const view = new DataView(buf);
+  view.setUint32(80, 3_000_000, true); // exceeds MAX_TRIANGLES = 2_000_000
+  expect(() => parseStlArrayBuffer(buf, "big.stl")).toThrow(/too many triangles/i);
+});
+
 test("parses large binary stl without stack overflow", () => {
   const triangleCount = 70000;
   const buffer = new ArrayBuffer(84 + triangleCount * 50);

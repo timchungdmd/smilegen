@@ -1,3 +1,5 @@
+import { MAX_TRIANGLES } from "./importConstants";
+
 export interface MeshVertex {
   x: number;
   y: number;
@@ -40,6 +42,14 @@ export function parseStlArrayBuffer(buffer: ArrayBuffer, name: string): ParsedSt
   }
 
   if (triangles.length === 0 && buffer.byteLength >= 84) {
+    // Pre-check triangle count before entering the try block so the size
+    // limit error is not silently swallowed.
+    const potentialCount = new DataView(buffer).getUint32(80, true);
+    if (potentialCount > MAX_TRIANGLES) {
+      throw new Error(
+        `Too many triangles: file claims ${potentialCount.toLocaleString()} but limit is ${MAX_TRIANGLES.toLocaleString()}. File may be corrupt.`
+      );
+    }
     try {
       triangles = parseBinaryTriangles(buffer);
     } catch {
@@ -115,6 +125,11 @@ function parseBinaryTriangles(buffer: ArrayBuffer): MeshTriangle[] {
 
   const view = new DataView(buffer);
   const triangleCount = view.getUint32(80, true);
+  if (triangleCount > MAX_TRIANGLES) {
+    throw new Error(
+      `Too many triangles: file claims ${triangleCount.toLocaleString()} but limit is ${MAX_TRIANGLES.toLocaleString()}. File may be corrupt.`
+    );
+  }
   const expectedLength = 84 + triangleCount * 50;
 
   if (buffer.byteLength < expectedLength) {

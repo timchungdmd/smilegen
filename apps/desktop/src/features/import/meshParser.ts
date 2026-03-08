@@ -4,6 +4,7 @@
  */
 
 import { parseStlArrayBuffer, type ParsedStlMesh, type MeshTriangle, type MeshVertex } from "./stlParser";
+import { MAX_TRIANGLES } from "./importConstants";
 
 /** Supported 3D mesh file extensions */
 export const MESH_EXTENSIONS = new Set(["stl", "obj", "ply"]);
@@ -116,6 +117,12 @@ function parsePlyBuffer(buffer: ArrayBuffer, name: string): ParsedStlMesh {
       const propName = line.split(/\s+/).pop() ?? "";
       vertexProps.push(propName);
     }
+  }
+
+  if (faceCount > MAX_TRIANGLES) {
+    throw new Error(
+      `PLY file claims ${faceCount.toLocaleString()} faces, exceeding the limit of ${MAX_TRIANGLES.toLocaleString()}.`
+    );
   }
 
   const xIdx = vertexProps.indexOf("x");
