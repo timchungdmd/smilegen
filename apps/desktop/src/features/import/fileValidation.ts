@@ -1,5 +1,4 @@
-const PHOTO_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "heic"]);
-const MESH_EXTENSIONS = new Set(["stl", "obj", "ply"]);
+import { MESH_EXTENSIONS, PHOTO_EXTENSIONS } from "./importConstants";
 
 function getExtension(filename: string) {
   const parts = filename.toLowerCase().split(".");

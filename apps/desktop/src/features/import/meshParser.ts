@@ -4,10 +4,7 @@
  */
 
 import { parseStlArrayBuffer, type ParsedStlMesh, type MeshTriangle, type MeshVertex } from "./stlParser";
-import { MAX_TRIANGLES } from "./importConstants";
-
-/** Supported 3D mesh file extensions */
-export const MESH_EXTENSIONS = new Set(["stl", "obj", "ply"]);
+import { MAX_TRIANGLES, MESH_EXTENSIONS } from "./importConstants";
 
 export function isMeshFile(filename: string): boolean {
   const ext = filename.toLowerCase().split(".").pop() ?? "";

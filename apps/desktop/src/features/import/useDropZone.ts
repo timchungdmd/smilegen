@@ -1,11 +1,9 @@
 import { useEffect, useCallback, useState } from "react";
+import { MESH_EXTENSIONS, PHOTO_EXTENSIONS as IMAGE_EXTENSIONS } from "./importConstants";
 
 export interface DropZoneState {
   isDragging: boolean;
 }
-
-const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "heic"]);
-const MESH_EXTENSIONS = new Set(["stl", "obj", "ply"]);
 
 function getExtension(filename: string): string {
   const dot = filename.lastIndexOf(".");
