@@ -34,11 +34,18 @@ export interface ParsedStlMesh {
 export function parseStlArrayBuffer(buffer: ArrayBuffer, name: string): ParsedStlMesh {
   const bytes = new Uint8Array(buffer);
   const decoder = new TextDecoder("utf-8");
-  const asciiCandidate = decoder.decode(bytes.slice(0, Math.min(bytes.length, 1024)));
+  // Decode header slice for format detection; cache full text to avoid re-decoding.
+  const asciiCandidate = decoder.decode(bytes.subarray(0, Math.min(bytes.length, 1024)));
+  // fullText is decoded lazily (once) and reused for both ASCII parse paths below.
+  let fullText: string | null = null;
+  const getFullText = () => {
+    if (fullText === null) fullText = decoder.decode(bytes);
+    return fullText;
+  };
   let triangles: MeshTriangle[] = [];
 
   if (buffer.byteLength < 84 || looksLikeAsciiStl(asciiCandidate)) {
-    triangles = parseAsciiTriangles(decoder.decode(bytes));
+    triangles = parseAsciiTriangles(getFullText());
   }
 
   if (triangles.length === 0 && buffer.byteLength >= 84) {
@@ -58,7 +65,7 @@ export function parseStlArrayBuffer(buffer: ArrayBuffer, name: string): ParsedSt
   }
 
   if (triangles.length === 0 && !looksLikeAsciiStl(asciiCandidate)) {
-    triangles = parseAsciiTriangles(decoder.decode(bytes));
+    triangles = parseAsciiTriangles(getFullText());
   }
 
   const boundsResult = createBoundsFromTriangles(triangles);
