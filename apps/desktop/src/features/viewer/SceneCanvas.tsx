@@ -160,6 +160,9 @@ function StlMeshView({
     return geo;
   }, [mesh.triangles]);
 
+  // Dispose GPU memory when geometry is replaced or component unmounts
+  useEffect(() => () => { geometry.dispose(); }, [geometry]);
+
   const center = useMemo(() => {
     return new THREE.Vector3(
       (mesh.bounds.minX + mesh.bounds.maxX) / 2,
@@ -248,6 +251,9 @@ function ToothMesh({
     const settings = { depth: d * 2, bevelEnabled: true, bevelSize: 0.15, bevelThickness: 0.1, bevelSegments: 3 };
     return new THREE.ExtrudeGeometry(shape, settings);
   }, [tooth.width, tooth.height, tooth.depth, tooth.previewTriangles]);
+
+  // Dispose GPU memory when geometry is replaced or component unmounts
+  useEffect(() => () => { geometry.dispose(); }, [geometry]);
 
   const useRealMesh = tooth.previewTriangles && tooth.previewTriangles.length > 0;
 
