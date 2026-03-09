@@ -1,8 +1,12 @@
 # apps/api/src/main.py
 from fastapi import FastAPI
 from .config import settings
+from .routers import patients, cases
 
 app = FastAPI(title="SmileGen API", version="0.1.0")
+
+app.include_router(patients.router)
+app.include_router(cases.router)
 
 @app.get("/health")
 async def health():
