@@ -1,0 +1,63 @@
+// apps/api/prisma/schema.prisma
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Patient {
+  id          String   @id @default(cuid())
+  name        String
+  dateOfBirth DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  cases       Case[]
+}
+
+model Case {
+  id        String     @id @default(cuid())
+  patientId String
+  patient   Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  status    CaseStatus @default(DRAFT)
+  title     String     @default("New Case")
+  planJson  String?    @db.Text
+  designJson String?   @db.Text
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  assets    Asset[]
+}
+
+enum CaseStatus {
+  DRAFT
+  IN_PROGRESS
+  READY
+  ARCHIVED
+}
+
+model Asset {
+  id        String    @id @default(cuid())
+  caseId    String
+  case      Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type      AssetType
+  filename  String
+  s3Key     String
+  sizeBytes BigInt
+  mimeType  String
+  createdAt DateTime  @default(now())
+}
+
+enum AssetType {
+  PHOTO_FRONTAL_SMILE
+  PHOTO_RETRACTED
+  SCAN_UPPER_JAW
+  SCAN_LOWER_JAW
+  SCAN_TOOTH_LIBRARY
+  CBCT
+  EXPORT_STL
+  EXPORT_PLY
+  LANDMARK_JSON
+}
