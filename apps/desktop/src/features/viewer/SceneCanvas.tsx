@@ -316,29 +316,62 @@ function SceneLighting() {
   );
 }
 
-// ─── Axis indicator (bottom-left orientation gizmo) ──────────────────
+// ─── Axis indicator (CSS overlay — no second WebGL context) ──────────
 
-function AxisIndicator() {
+/**
+ * Reads the main camera quaternion every frame and reports projected axis
+ * endpoints so a plain CSS/SVG overlay can render the gizmo without opening
+ * a second WebGL context.
+ */
+function AxisReporter({ onAxes }: { onAxes: (axes: AxisEndpoints) => void }) {
   const { camera } = useThree();
-  const groupRef = useRef<THREE.Group>(null);
+  const _v = useRef(new THREE.Vector3());
 
   useFrame(() => {
-    if (!groupRef.current) return;
-    // Mirror camera rotation onto the indicator
-    groupRef.current.quaternion.copy(camera.quaternion).invert();
+    const project = (x: number, y: number, z: number) => {
+      _v.current.set(x, y, z).applyQuaternion(camera.quaternion);
+      return { x: _v.current.x, y: -_v.current.y }; // flip Y for screen coords
+    };
+    onAxes({ x: project(1, 0, 0), y: project(0, 1, 0), z: project(0, 0, 1) });
   });
 
-  const axisLen = 0.7;
+  return null;
+}
+
+interface AxisEndpoints {
+  x: { x: number; y: number };
+  y: { x: number; y: number };
+  z: { x: number; y: number };
+}
+
+/** Pure CSS/SVG axis gizmo — zero GPU overhead. */
+function CssAxisGizmo({ axes }: { axes: AxisEndpoints }) {
+  const cx = 28;
+  const cy = 28;
+  const len = 20;
+
+  const ax = (v: { x: number; y: number }) => ({
+    x2: cx + v.x * len,
+    y2: cy + v.y * len
+  });
 
   return (
-    <group ref={groupRef}>
-      {/* X - Red */}
-      <Line points={[[0, 0, 0], [axisLen, 0, 0]]} color="#ef476f" lineWidth={2} />
-      {/* Y - Green */}
-      <Line points={[[0, 0, 0], [0, axisLen, 0]]} color="#06d6a0" lineWidth={2} />
-      {/* Z - Blue */}
-      <Line points={[[0, 0, 0], [0, 0, axisLen]]} color="#58a6ff" lineWidth={2} />
-    </group>
+    <svg
+      width="56"
+      height="56"
+      style={{ display: "block" }}
+      aria-hidden="true"
+    >
+      {/* X — red */}
+      <line x1={cx} y1={cy} {...ax(axes.x)} stroke="#ef476f" strokeWidth="2" strokeLinecap="round" />
+      <text x={ax(axes.x).x2 + 3} y={ax(axes.x).y2 + 4} fill="#ef476f" fontSize="8" fontFamily="monospace">X</text>
+      {/* Y — green */}
+      <line x1={cx} y1={cy} {...ax(axes.y)} stroke="#06d6a0" strokeWidth="2" strokeLinecap="round" />
+      <text x={ax(axes.y).x2 + 3} y={ax(axes.y).y2 + 4} fill="#06d6a0" fontSize="8" fontFamily="monospace">Y</text>
+      {/* Z — blue */}
+      <line x1={cx} y1={cy} {...ax(axes.z)} stroke="#58a6ff" strokeWidth="2" strokeLinecap="round" />
+      <text x={ax(axes.z).x2 + 3} y={ax(axes.z).y2 + 4} fill="#58a6ff" fontSize="8" fontFamily="monospace">Z</text>
+    </svg>
   );
 }
 
@@ -353,6 +386,12 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
     pos: THREE.Vector3;
     up: THREE.Vector3;
   } | null>(null);
+
+  const [axisEndpoints, setAxisEndpoints] = useState<AxisEndpoints>({
+    x: { x: 1, y: 0 },
+    y: { x: 0, y: -1 },
+    z: { x: 0, y: 0 }
+  });
 
   const collisions = useMemo(() => {
     if (!activeVariant) return [];
@@ -479,6 +518,8 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
           }}
         />
         <Environment preset="studio" />
+        {/* Report camera axes each frame so the CSS gizmo can track orientation */}
+        <AxisReporter onAxes={setAxisEndpoints} />
       </Canvas>
 
       {/* View preset buttons */}
@@ -504,11 +545,9 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
         ))}
       </div>
 
-      {/* Axis indicator */}
+      {/* Axis indicator — CSS/SVG overlay, no second WebGL context */}
       <div className="viewer-axis-indicator">
-        <Canvas orthographic camera={{ zoom: 40, position: [0, 0, 5] }} style={{ background: "transparent" }}>
-          <AxisIndicator />
-        </Canvas>
+        <CssAxisGizmo axes={axisEndpoints} />
       </div>
 
       {/* Info bar */}
