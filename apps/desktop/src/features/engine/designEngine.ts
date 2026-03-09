@@ -198,15 +198,9 @@ export function updateVariantToothDimensions(
   updates: Partial<Pick<GeneratedToothDesign, "width" | "height" | "depth" | "facialVolume">>
 ): GeneratedVariantDesign {
   const teeth = variant.teeth.map((tooth) => {
+    // Return unchanged teeth by reference — no rebuild needed
     if (tooth.toothId !== toothId) {
-      return rebuildToothDesign(tooth, {
-        width: tooth.width,
-        height: tooth.height,
-        depth: tooth.depth,
-        facialVolume: tooth.facialVolume,
-        positionX: tooth.positionX,
-        positionY: tooth.positionY
-      });
+      return tooth;
     }
 
     return rebuildToothDesign(tooth, {
