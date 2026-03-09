@@ -28,6 +28,7 @@ export function DesignView() {
   const moveTooth = useDesignStore((s) => s.moveTooth);
   const adjustTooth = useDesignStore((s) => s.adjustTooth);
   const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
+  const uploadedToothModels = useImportStore((s) => s.uploadedToothModels);
   const plan = useDesignStore((s) => s.plan);
   const changeBias = useDesignStore((s) => s.changeBias);
   const updatePlanControls = useDesignStore((s) => s.updatePlanControls);
@@ -41,7 +42,7 @@ export function DesignView() {
   const createCase = useCaseStore((s) => s.createCase);
   const caseRecord = useCaseStore((s) => s.caseRecord);
   const photoNames = useMemo(() => uploadedPhotos.map((p) => p.name), [uploadedPhotos]);
-  const toothModelNames = useMemo(() => useImportStore.getState().uploadedToothModels.map((m) => m.name), []);
+  const toothModelNames = useMemo(() => uploadedToothModels.map((m) => m.name), [uploadedToothModels]);
   const archName = useImportStore((s) => s.archScanName);
   const validation = useMemo(
     () => validateImportSet({ photos: photoNames, archScan: archName, toothLibrary: toothModelNames }),

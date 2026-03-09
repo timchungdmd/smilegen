@@ -1,11 +1,23 @@
 import { create } from "zustand";
 
-// Re-export so consumers can import from one place
-export type { ViewId } from "./useSmileStore";
-export type { AlignmentMarker, AlignmentMarkerType } from "./useSmileStore";
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-import type { ViewId } from "./useSmileStore";
-import type { AlignmentMarker } from "./useSmileStore";
+export type ViewId = "import" | "design" | "compare" | "export" | "cases" | "settings";
+
+export type AlignmentMarkerType = "incisal" | "cusp";
+
+export interface AlignmentMarker {
+  id: string;
+  type: AlignmentMarkerType;
+  /** Tooth number (Universal) this marker corresponds to, e.g. "8", "6" */
+  toothId: string;
+  /** X position as percent of photo width (0-100) */
+  x: number;
+  /** Y position as percent of photo height (0-100) */
+  y: number;
+}
+
+// ─── State and actions interfaces ────────────────────────────────────────────
 
 interface ViewportState {
   // Navigation
@@ -62,12 +74,15 @@ interface ViewportActions {
   clearAlignmentMarkers: () => void;
   setCameraDistance: (distance: number) => void;
   setActiveCollectionId: (id: string | null) => void;
+  resetViewport: () => void;
 }
 
 export type ViewportStore = ViewportState & ViewportActions;
 
-export const useViewportStore = create<ViewportStore>((set, get) => ({
-  activeView: "cases",
+// ─── Initial state ────────────────────────────────────────────────────────────
+
+const INITIAL_VIEWPORT_STATE: ViewportState = {
+  activeView: "import",
 
   showOverlay: false,
   overlayOpacity: 0.7,
@@ -91,6 +106,12 @@ export const useViewportStore = create<ViewportStore>((set, get) => ({
   cameraDistance: 200,
 
   activeCollectionId: null,
+};
+
+// ─── Store ────────────────────────────────────────────────────────────────────
+
+export const useViewportStore = create<ViewportStore>()((set) => ({
+  ...INITIAL_VIEWPORT_STATE,
 
   setActiveView: (view) => set({ activeView: view }),
   setShowOverlay: (show) => set({ showOverlay: show }),
@@ -103,7 +124,7 @@ export const useViewportStore = create<ViewportStore>((set, get) => ({
   setGingivalLineY: (y) => set({ gingivalLineY: y }),
   setLeftCommissureX: (x) => set({ leftCommissureX: x }),
   setRightCommissureX: (x) => set({ rightCommissureX: x }),
-  setPhotoZoom: (zoom) => set({ photoZoom: zoom }),
+  setPhotoZoom: (zoom) => set({ photoZoom: Math.max(0.25, Math.min(5, zoom)) }),
   setPhotoPan: (x, y) => set({ photoPanX: x, photoPanY: y }),
 
   addAlignmentMarker: (marker) =>
@@ -123,4 +144,6 @@ export const useViewportStore = create<ViewportStore>((set, get) => ({
 
   setCameraDistance: (distance) => set({ cameraDistance: distance }),
   setActiveCollectionId: (id) => set({ activeCollectionId: id }),
+
+  resetViewport: () => set(INITIAL_VIEWPORT_STATE),
 }));
