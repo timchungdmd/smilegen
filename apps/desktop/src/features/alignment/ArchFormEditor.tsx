@@ -1,5 +1,7 @@
 import { useMemo } from "react";
-import { useSmileStore } from "../../store/useSmileStore";
+import { useDesignStore } from "../../store/useDesignStore";
+import { useViewportStore } from "../../store/useViewportStore";
+import { useImportStore } from "../../store/useImportStore";
 
 type ArchPreset = "auto" | "narrow" | "average" | "wide" | "custom";
 
@@ -12,15 +14,15 @@ const PRESETS: { value: ArchPreset; label: string; desc: string }[] = [
 ];
 
 export function ArchFormEditor() {
-  const archPreset = useSmileStore((s) => s.archPreset);
-  const archDepthOverride = useSmileStore((s) => s.archDepthOverride);
-  const archHalfWidthOverride = useSmileStore((s) => s.archHalfWidthOverride);
-  const cameraDistance = useSmileStore((s) => s.cameraDistance);
-  const archScanMesh = useSmileStore((s) => s.archScanMesh);
-  const setArchPreset = useSmileStore((s) => s.setArchPreset);
-  const setArchDepthOverride = useSmileStore((s) => s.setArchDepthOverride);
-  const setArchHalfWidthOverride = useSmileStore((s) => s.setArchHalfWidthOverride);
-  const setCameraDistance = useSmileStore((s) => s.setCameraDistance);
+  const archPreset = useDesignStore((s) => s.archPreset);
+  const archDepthOverride = useDesignStore((s) => s.archDepthOverride);
+  const archHalfWidthOverride = useDesignStore((s) => s.archHalfWidthOverride);
+  const cameraDistance = useViewportStore((s) => s.cameraDistance);
+  const archScanMesh = useImportStore((s) => s.archScanMesh);
+  const setArchPreset = useDesignStore((s) => s.setArchPreset);
+  const setArchDepthOverride = useDesignStore((s) => s.setArchDepthOverride);
+  const setArchHalfWidthOverride = useDesignStore((s) => s.setArchHalfWidthOverride);
+  const setCameraDistance = useViewportStore((s) => s.setCameraDistance);
 
   // Effective values (what's actually used)
   const effective = useMemo(() => {

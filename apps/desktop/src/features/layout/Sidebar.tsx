@@ -1,4 +1,4 @@
-import { useSmileStore, type ViewId } from "../../store/useSmileStore";
+import { useViewportStore, type ViewId } from "../../store/useViewportStore";
 
 interface SidebarProps {
   activeView: ViewId;
@@ -62,7 +62,7 @@ function NavButton({ item, isActive, onClick }: { item: typeof navItems[0]; isAc
 }
 
 export function Sidebar({ activeView }: SidebarProps) {
-  const setActiveView = useSmileStore((s) => s.setActiveView);
+  const setActiveView = useViewportStore((s) => s.setActiveView);
 
   const topItems = navItems.filter((i) => i.group !== "bottom");
   const bottomItems = navItems.filter((i) => i.group === "bottom");

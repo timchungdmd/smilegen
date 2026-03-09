@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { listCases, deleteCase, type SavedCaseSummary } from "../../services/caseDb";
-import { useSmileStore } from "../../store/useSmileStore";
+import { useCaseStore } from "../../store/useCaseStore";
 
 function workflowBadgeClass(state: string): string {
   switch (state) {
@@ -53,11 +53,11 @@ export function CaseListView() {
   }, [refreshCases]);
 
   const handleNewCase = () => {
-    useSmileStore.getState().newCase();
+    useCaseStore.getState().newCase();
   };
 
   const handleLoadCase = async (id: string) => {
-    await useSmileStore.getState().loadCaseFromDB(id);
+    await useCaseStore.getState().loadCaseFromDB(id);
   };
 
   const handleDeleteCase = async (id: string) => {

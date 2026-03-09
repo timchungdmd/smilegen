@@ -1,17 +1,20 @@
 import { useMemo } from "react";
-import { useSmileStore, selectActiveVariant } from "../../store/useSmileStore";
+import { useCaseStore } from "../../store/useCaseStore";
+import { useViewportStore } from "../../store/useViewportStore";
+import { useDesignStore, selectActiveVariant } from "../../store/useDesignStore";
+import { useImportStore } from "../../store/useImportStore";
 import { validateImportSet } from "../import/importService";
 
 export function Header() {
-  const caseRecord = useSmileStore((s) => s.caseRecord);
-  const activeView = useSmileStore((s) => s.activeView);
-  const activeVariant = useSmileStore(selectActiveVariant);
-  const quickGenerate = useSmileStore((s) => s.quickGenerate);
-  const downloadActiveStl = useSmileStore((s) => s.downloadActiveStl);
-  const uploadedPhotos = useSmileStore((s) => s.uploadedPhotos);
-  const archScanName = useSmileStore((s) => s.archScanName);
-  const uploadedToothModels = useSmileStore((s) => s.uploadedToothModels);
-  const generatedDesign = useSmileStore((s) => s.generatedDesign);
+  const caseRecord = useCaseStore((s) => s.caseRecord);
+  const activeView = useViewportStore((s) => s.activeView);
+  const activeVariant = useDesignStore(selectActiveVariant);
+  const quickGenerate = useDesignStore((s) => s.quickGenerate);
+  const downloadActiveStl = useDesignStore((s) => s.downloadActiveStl);
+  const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
+  const archScanName = useImportStore((s) => s.archScanName);
+  const uploadedToothModels = useImportStore((s) => s.uploadedToothModels);
+  const generatedDesign = useDesignStore((s) => s.generatedDesign);
 
   const statusLabel = caseRecord?.workflowState ?? "draft";
   const canQuickGenerate = useMemo(() => {
@@ -99,7 +102,7 @@ export function Header() {
         <button
           className="btn-icon"
           title="Undo (Ctrl+Z)"
-          onClick={() => useSmileStore.temporal?.getState()?.undo?.()}
+          onClick={() => useDesignStore.temporal?.getState()?.undo?.()}
           style={{ padding: 5 }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -109,7 +112,7 @@ export function Header() {
         <button
           className="btn-icon"
           title="Redo (Ctrl+Y)"
-          onClick={() => useSmileStore.temporal?.getState()?.redo?.()}
+          onClick={() => useDesignStore.temporal?.getState()?.redo?.()}
           style={{ padding: 5 }}
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">

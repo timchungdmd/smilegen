@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import { matchShortcut } from "./keyboardShortcuts";
-import { useSmileStore } from "../../store/useSmileStore";
-import type { ViewId } from "../../store/useSmileStore";
-import { undo, redo, type TemporalSmileStore } from "../../store/undoMiddleware";
+import { useViewportStore, type ViewId } from "../../store/useViewportStore";
+import { useDesignStore } from "../../store/useDesignStore";
+import { useCaseStore } from "../../store/useCaseStore";
 
 const VIEW_ACTIONS: Record<string, ViewId> = {
   "view:import": "import",
@@ -34,68 +34,70 @@ export function useKeyboardShortcuts(): void {
       if (!action) return;
 
       event.preventDefault();
-      const state = useSmileStore.getState();
+      const viewportState = useViewportStore.getState();
+      const designState = useDesignStore.getState();
+      const caseState = useCaseStore.getState();
 
       // View navigation
       const viewTarget = VIEW_ACTIONS[action];
       if (viewTarget) {
-        state.setActiveView(viewTarget);
+        viewportState.setActiveView(viewTarget);
         return;
       }
 
       switch (action) {
         case "deselect":
-          state.selectTooth(null);
+          designState.selectTooth(null);
           break;
 
         case "toggleOverlay":
-          state.setShowOverlay(!state.showOverlay);
+          viewportState.setShowOverlay(!viewportState.showOverlay);
           break;
 
         case "nextTooth": {
-          const plan = state.plan;
+          const plan = designState.plan;
           const teeth = plan.selectedTeeth;
           if (teeth.length === 0) break;
-          const currentIndex = state.selectedToothId
-            ? teeth.indexOf(state.selectedToothId)
+          const currentIndex = designState.selectedToothId
+            ? teeth.indexOf(designState.selectedToothId)
             : -1;
           const nextIndex = (currentIndex + 1) % teeth.length;
-          state.selectTooth(teeth[nextIndex]);
+          designState.selectTooth(teeth[nextIndex]);
           break;
         }
 
         case "prevVariant":
         case "nextVariant": {
-          const variants = state.variants;
+          const variants = designState.variants;
           if (variants.length === 0) break;
-          const currentVarIndex = state.activeVariantId
-            ? variants.findIndex((v) => v.id === state.activeVariantId)
+          const currentVarIndex = designState.activeVariantId
+            ? variants.findIndex((v) => v.id === designState.activeVariantId)
             : -1;
           const delta = action === "nextVariant" ? 1 : -1;
           const nextVarIndex =
             (currentVarIndex + delta + variants.length) % variants.length;
-          state.selectVariant(variants[nextVarIndex].id);
+          designState.selectVariant(variants[nextVarIndex].id);
           break;
         }
 
         case "save":
-          state.saveCaseToDB();
+          caseState.saveCaseToDB();
           break;
 
         case "export":
-          state.downloadActiveStl();
+          designState.downloadActiveStl();
           break;
 
         case "generate":
-          state.generateDesign();
+          designState.generateDesign();
           break;
 
         case "undo":
-          undo(useSmileStore as unknown as TemporalSmileStore);
+          useDesignStore.temporal.getState().undo();
           break;
 
         case "redo":
-          redo(useSmileStore as unknown as TemporalSmileStore);
+          useDesignStore.temporal.getState().redo();
           break;
       }
     }

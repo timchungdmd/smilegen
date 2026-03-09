@@ -5,7 +5,7 @@ import * as THREE from "three";
 import type { ParsedStlMesh } from "../import/stlParser";
 import type { GeneratedVariantDesign } from "../engine/designEngine";
 import { detectCollisions } from "../geometry/collisionDetector";
-import { useSmileStore } from "../../store/useSmileStore";
+import { useDesignStore } from "../../store/useDesignStore";
 
 interface SceneCanvasProps {
   archScanMesh?: ParsedStlMesh | null;
@@ -340,8 +340,8 @@ function AxisIndicator() {
 
 export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSelectTooth }: SceneCanvasProps) {
   const hasContent = Boolean(archScanMesh) || Boolean(activeVariant?.teeth.length);
-  const archDepthOverride = useSmileStore((s) => s.archDepthOverride);
-  const archHalfWidthOverride = useSmileStore((s) => s.archHalfWidthOverride);
+  const archDepthOverride = useDesignStore((s) => s.archDepthOverride);
+  const archHalfWidthOverride = useDesignStore((s) => s.archHalfWidthOverride);
 
   const [animTarget, setAnimTarget] = useState<{
     pos: THREE.Vector3;

@@ -1,6 +1,8 @@
 import { useRef, useState, useCallback, useMemo, useEffect } from "react";
-import type { UploadedPhoto } from "../../store/useSmileStore";
-import { useSmileStore, type AlignmentMarker } from "../../store/useSmileStore";
+import type { UploadedPhoto } from "../../store/useImportStore";
+import { useImportStore } from "../../store/useImportStore";
+import { useViewportStore, type AlignmentMarker } from "../../store/useViewportStore";
+import { useDesignStore } from "../../store/useDesignStore";
 import type { GeneratedVariantDesign } from "../engine/designEngine";
 import {
   buildCalibrationFromGuides,
@@ -40,38 +42,38 @@ export function PhotoOverlay({
   onSelectTooth,
   onMoveTooth
 }: PhotoOverlayProps) {
-  const showOverlay = useSmileStore((s) => s.showOverlay);
-  const overlayOpacity = useSmileStore((s) => s.overlayOpacity);
-  const showSmileArc = useSmileStore((s) => s.showSmileArc);
-  const showMidline = useSmileStore((s) => s.showMidline);
-  const showGingivalLine = useSmileStore((s) => s.showGingivalLine);
-  const midlineX = useSmileStore((s) => s.midlineX);
-  const smileArcY = useSmileStore((s) => s.smileArcY);
-  const gingivalLineY = useSmileStore((s) => s.gingivalLineY);
-  const setMidlineX = useSmileStore((s) => s.setMidlineX);
-  const setSmileArcY = useSmileStore((s) => s.setSmileArcY);
-  const setGingivalLineY = useSmileStore((s) => s.setGingivalLineY);
-  const archScanMesh = useSmileStore((s) => s.archScanMesh);
-  const archDepthOverride = useSmileStore((s) => s.archDepthOverride);
-  const archHalfWidthOverride = useSmileStore((s) => s.archHalfWidthOverride);
-  const cameraDistance = useSmileStore((s) => s.cameraDistance);
-  const leftCommissureX = useSmileStore((s) => s.leftCommissureX);
-  const rightCommissureX = useSmileStore((s) => s.rightCommissureX);
-  const setLeftCommissureX = useSmileStore((s) => s.setLeftCommissureX);
-  const setRightCommissureX = useSmileStore((s) => s.setRightCommissureX);
+  const showOverlay = useViewportStore((s) => s.showOverlay);
+  const overlayOpacity = useViewportStore((s) => s.overlayOpacity);
+  const showSmileArc = useViewportStore((s) => s.showSmileArc);
+  const showMidline = useViewportStore((s) => s.showMidline);
+  const showGingivalLine = useViewportStore((s) => s.showGingivalLine);
+  const midlineX = useViewportStore((s) => s.midlineX);
+  const smileArcY = useViewportStore((s) => s.smileArcY);
+  const gingivalLineY = useViewportStore((s) => s.gingivalLineY);
+  const setMidlineX = useViewportStore((s) => s.setMidlineX);
+  const setSmileArcY = useViewportStore((s) => s.setSmileArcY);
+  const setGingivalLineY = useViewportStore((s) => s.setGingivalLineY);
+  const archScanMesh = useImportStore((s) => s.archScanMesh);
+  const archDepthOverride = useDesignStore((s) => s.archDepthOverride);
+  const archHalfWidthOverride = useDesignStore((s) => s.archHalfWidthOverride);
+  const cameraDistance = useViewportStore((s) => s.cameraDistance);
+  const leftCommissureX = useViewportStore((s) => s.leftCommissureX);
+  const rightCommissureX = useViewportStore((s) => s.rightCommissureX);
+  const setLeftCommissureX = useViewportStore((s) => s.setLeftCommissureX);
+  const setRightCommissureX = useViewportStore((s) => s.setRightCommissureX);
 
   // Pan / Zoom
-  const photoZoom = useSmileStore((s) => s.photoZoom);
-  const photoPanX = useSmileStore((s) => s.photoPanX);
-  const photoPanY = useSmileStore((s) => s.photoPanY);
-  const setPhotoZoom = useSmileStore((s) => s.setPhotoZoom);
-  const setPhotoPan = useSmileStore((s) => s.setPhotoPan);
+  const photoZoom = useViewportStore((s) => s.photoZoom);
+  const photoPanX = useViewportStore((s) => s.photoPanX);
+  const photoPanY = useViewportStore((s) => s.photoPanY);
+  const setPhotoZoom = useViewportStore((s) => s.setPhotoZoom);
+  const setPhotoPan = useViewportStore((s) => s.setPhotoPan);
 
   // Alignment markers
-  const alignmentMarkers = useSmileStore((s) => s.alignmentMarkers);
-  const addAlignmentMarker = useSmileStore((s) => s.addAlignmentMarker);
-  const updateAlignmentMarker = useSmileStore((s) => s.updateAlignmentMarker);
-  const clearAlignmentMarkers = useSmileStore((s) => s.clearAlignmentMarkers);
+  const alignmentMarkers = useViewportStore((s) => s.alignmentMarkers);
+  const addAlignmentMarker = useViewportStore((s) => s.addAlignmentMarker);
+  const updateAlignmentMarker = useViewportStore((s) => s.updateAlignmentMarker);
+  const clearAlignmentMarkers = useViewportStore((s) => s.clearAlignmentMarkers);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);

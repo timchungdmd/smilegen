@@ -1,18 +1,20 @@
 import { useMemo, useState } from "react";
-import { useSmileStore, selectActiveVariant } from "../../store/useSmileStore";
+import { useCaseStore } from "../../store/useCaseStore";
+import { useDesignStore, selectActiveVariant } from "../../store/useDesignStore";
+import { useImportStore } from "../../store/useImportStore";
 import { canMarkReadyForDoctor } from "../handoff/handoffStore";
 import { exportVariant, type ExportFormat } from "../export/exportService";
 import { openReportForPrint } from "../export/reportGenerator";
 import { packageCase, downloadPackagedCase } from "../collaboration/casePackager";
 
 export function ExportView() {
-  const activeVariant = useSmileStore(selectActiveVariant);
-  const generatedDesign = useSmileStore((s) => s.generatedDesign);
-  const caseRecord = useSmileStore((s) => s.caseRecord);
-  const readyForDoctor = useSmileStore((s) => s.readyForDoctor);
-  const markReadyForDoctor = useSmileStore((s) => s.markReadyForDoctor);
-  const downloadActiveStl = useSmileStore((s) => s.downloadActiveStl);
-  const variants = useSmileStore((s) => s.variants);
+  const activeVariant = useDesignStore(selectActiveVariant);
+  const generatedDesign = useDesignStore((s) => s.generatedDesign);
+  const caseRecord = useCaseStore((s) => s.caseRecord);
+  const readyForDoctor = useDesignStore((s) => s.readyForDoctor);
+  const markReadyForDoctor = useDesignStore((s) => s.markReadyForDoctor);
+  const downloadActiveStl = useDesignStore((s) => s.downloadActiveStl);
+  const variants = useDesignStore((s) => s.variants);
 
   const statusLabel = caseRecord?.workflowState ?? "draft";
   const canMarkReady = useMemo(
@@ -24,12 +26,12 @@ export function ExportView() {
       }),
     [caseRecord, variants.length]
   );
-  const plan = useSmileStore((s) => s.plan);
-  const activeVariantId = useSmileStore((s) => s.activeVariantId);
-  const selectedShadeId = useSmileStore((s) => s.selectedShadeId);
-  const uploadedPhotos = useSmileStore((s) => s.uploadedPhotos);
-  const uploadedToothModels = useSmileStore((s) => s.uploadedToothModels);
-  const archScanName = useSmileStore((s) => s.archScanName);
+  const plan = useDesignStore((s) => s.plan);
+  const activeVariantId = useDesignStore((s) => s.activeVariantId);
+  const selectedShadeId = useDesignStore((s) => s.selectedShadeId);
+  const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
+  const uploadedToothModels = useImportStore((s) => s.uploadedToothModels);
+  const archScanName = useImportStore((s) => s.archScanName);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("stl_binary");
 
   if (!generatedDesign) {

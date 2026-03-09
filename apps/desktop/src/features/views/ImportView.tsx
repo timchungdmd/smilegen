@@ -1,5 +1,7 @@
 import { useRef, useMemo, useState, useCallback, type DragEvent } from "react";
-import { useSmileStore } from "../../store/useSmileStore";
+import { useImportStore } from "../../store/useImportStore";
+import { useDesignStore } from "../../store/useDesignStore";
+import { useViewportStore } from "../../store/useViewportStore";
 import { validateImportSet } from "../import/importService";
 import { SceneCanvas } from "../viewer/SceneCanvas";
 import { BUNDLED_COLLECTIONS } from "../library/bundledLibrary";
@@ -7,22 +9,22 @@ import { BUNDLED_COLLECTIONS } from "../library/bundledLibrary";
 type DropTarget = "photos" | "arch" | "tooth" | null;
 
 export function ImportView() {
-  const uploadedPhotos = useSmileStore((s) => s.uploadedPhotos);
-  const archScanMesh = useSmileStore((s) => s.archScanMesh);
-  const archScanName = useSmileStore((s) => s.archScanName);
-  const uploadedToothModels = useSmileStore((s) => s.uploadedToothModels);
-  const importError = useSmileStore((s) => s.importError);
-  const handlePhotosSelected = useSmileStore((s) => s.handlePhotosSelected);
-  const handleArchScanSelected = useSmileStore((s) => s.handleArchScanSelected);
-  const handleToothModelsSelected = useSmileStore((s) => s.handleToothModelsSelected);
-  const removePhoto = useSmileStore((s) => s.removePhoto);
-  const clearPhotos = useSmileStore((s) => s.clearPhotos);
-  const clearArchScan = useSmileStore((s) => s.clearArchScan);
-  const removeToothModel = useSmileStore((s) => s.removeToothModel);
-  const clearToothModels = useSmileStore((s) => s.clearToothModels);
-  const quickGenerate = useSmileStore((s) => s.quickGenerate);
-  const activeCollectionId = useSmileStore((s) => s.activeCollectionId);
-  const setActiveCollectionId = useSmileStore((s) => s.setActiveCollectionId);
+  const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
+  const archScanMesh = useImportStore((s) => s.archScanMesh);
+  const archScanName = useImportStore((s) => s.archScanName);
+  const uploadedToothModels = useImportStore((s) => s.uploadedToothModels);
+  const importError = useImportStore((s) => s.importError);
+  const handlePhotosSelected = useImportStore((s) => s.handlePhotosSelected);
+  const handleArchScanSelected = useImportStore((s) => s.handleArchScanSelected);
+  const handleToothModelsSelected = useImportStore((s) => s.handleToothModelsSelected);
+  const removePhoto = useImportStore((s) => s.removePhoto);
+  const clearPhotos = useImportStore((s) => s.clearPhotos);
+  const clearArchScan = useImportStore((s) => s.clearArchScan);
+  const removeToothModel = useImportStore((s) => s.removeToothModel);
+  const clearToothModels = useImportStore((s) => s.clearToothModels);
+  const quickGenerate = useDesignStore((s) => s.quickGenerate);
+  const activeCollectionId = useViewportStore((s) => s.activeCollectionId);
+  const setActiveCollectionId = useViewportStore((s) => s.setActiveCollectionId);
 
   const validation = useMemo(
     () =>

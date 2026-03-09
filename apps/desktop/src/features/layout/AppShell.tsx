@@ -1,5 +1,6 @@
 import { useMemo, useCallback } from "react";
-import { useSmileStore } from "../../store/useSmileStore";
+import { useViewportStore } from "../../store/useViewportStore";
+import { useImportStore } from "../../store/useImportStore";
 import { useKeyboardShortcuts } from "../shortcuts/useKeyboardShortcuts";
 import { useDropZone } from "../import/useDropZone";
 import { Header } from "./Header";
@@ -7,15 +8,15 @@ import { Sidebar } from "./Sidebar";
 import { Workspace } from "./Workspace";
 
 export function AppShell() {
-  const activeView = useSmileStore((s) => s.activeView);
+  const activeView = useViewportStore((s) => s.activeView);
 
   // Global keyboard shortcuts
   useKeyboardShortcuts();
 
   // Global drag-and-drop file import
-  const handlePhotosSelected = useSmileStore((s) => s.handlePhotosSelected);
-  const handleArchScanSelected = useSmileStore((s) => s.handleArchScanSelected);
-  const handleToothModelsSelected = useSmileStore((s) => s.handleToothModelsSelected);
+  const handlePhotosSelected = useImportStore((s) => s.handlePhotosSelected);
+  const handleArchScanSelected = useImportStore((s) => s.handleArchScanSelected);
+  const handleToothModelsSelected = useImportStore((s) => s.handleToothModelsSelected);
 
   const onPhotos = useCallback(
     (files: File[]) => {

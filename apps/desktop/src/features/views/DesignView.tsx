@@ -1,5 +1,8 @@
 import { useState, useMemo } from "react";
-import { useSmileStore, selectActiveVariant } from "../../store/useSmileStore";
+import { useImportStore } from "../../store/useImportStore";
+import { useDesignStore, selectActiveVariant } from "../../store/useDesignStore";
+import { useCaseStore } from "../../store/useCaseStore";
+import { useViewportStore } from "../../store/useViewportStore";
 import { validateImportSet } from "../import/importService";
 import { SceneCanvas } from "../viewer/SceneCanvas";
 import { PhotoOverlay } from "../overlay/PhotoOverlay";
@@ -18,53 +21,53 @@ type DesignTab = "3d" | "photo";
 
 export function DesignView() {
   const [activeTab, setActiveTab] = useState<DesignTab>("3d");
-  const archScanMesh = useSmileStore((s) => s.archScanMesh);
-  const activeVariant = useSmileStore(selectActiveVariant);
-  const selectedToothId = useSmileStore((s) => s.selectedToothId);
-  const selectTooth = useSmileStore((s) => s.selectTooth);
-  const moveTooth = useSmileStore((s) => s.moveTooth);
-  const adjustTooth = useSmileStore((s) => s.adjustTooth);
-  const uploadedPhotos = useSmileStore((s) => s.uploadedPhotos);
-  const plan = useSmileStore((s) => s.plan);
-  const changeBias = useSmileStore((s) => s.changeBias);
-  const updatePlanControls = useSmileStore((s) => s.updatePlanControls);
-  const toggleToothAction = useSmileStore((s) => s.toggleTooth);
-  const setTreatmentTypeFn = useSmileStore((s) => s.setTreatmentType);
-  const trustSummary = useSmileStore((s) => s.trustSummary);
-  const mappingState = useSmileStore((s) => s.mappingState);
-  const generatedDesign = useSmileStore((s) => s.generatedDesign);
-  const generateDesign = useSmileStore((s) => s.generateDesign);
-  const confirmMapping = useSmileStore((s) => s.confirmMapping);
-  const createCase = useSmileStore((s) => s.createCase);
-  const caseRecord = useSmileStore((s) => s.caseRecord);
+  const archScanMesh = useImportStore((s) => s.archScanMesh);
+  const activeVariant = useDesignStore(selectActiveVariant);
+  const selectedToothId = useDesignStore((s) => s.selectedToothId);
+  const selectTooth = useDesignStore((s) => s.selectTooth);
+  const moveTooth = useDesignStore((s) => s.moveTooth);
+  const adjustTooth = useDesignStore((s) => s.adjustTooth);
+  const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
+  const plan = useDesignStore((s) => s.plan);
+  const changeBias = useDesignStore((s) => s.changeBias);
+  const updatePlanControls = useDesignStore((s) => s.updatePlanControls);
+  const toggleToothAction = useDesignStore((s) => s.toggleTooth);
+  const setTreatmentTypeFn = useDesignStore((s) => s.setTreatmentType);
+  const trustSummary = useDesignStore((s) => s.trustSummary);
+  const mappingState = useCaseStore((s) => s.mappingState);
+  const generatedDesign = useDesignStore((s) => s.generatedDesign);
+  const generateDesign = useDesignStore((s) => s.generateDesign);
+  const confirmMapping = useCaseStore((s) => s.confirmMapping);
+  const createCase = useCaseStore((s) => s.createCase);
+  const caseRecord = useCaseStore((s) => s.caseRecord);
   const photoNames = useMemo(() => uploadedPhotos.map((p) => p.name), [uploadedPhotos]);
-  const toothModelNames = useMemo(() => useSmileStore.getState().uploadedToothModels.map((m) => m.name), []);
-  const archName = useSmileStore((s) => s.archScanName);
+  const toothModelNames = useMemo(() => useImportStore.getState().uploadedToothModels.map((m) => m.name), []);
+  const archName = useImportStore((s) => s.archScanName);
   const validation = useMemo(
     () => validateImportSet({ photos: photoNames, archScan: archName, toothLibrary: toothModelNames }),
     [photoNames, archName, toothModelNames]
   );
   const canPreview = caseRecord?.workflowState === "mapped" && validation.ok;
 
-  const showOverlay = useSmileStore((s) => s.showOverlay);
-  const setShowOverlay = useSmileStore((s) => s.setShowOverlay);
-  const overlayOpacity = useSmileStore((s) => s.overlayOpacity);
-  const setOverlayOpacity = useSmileStore((s) => s.setOverlayOpacity);
-  const showSmileArc = useSmileStore((s) => s.showSmileArc);
-  const setShowSmileArc = useSmileStore((s) => s.setShowSmileArc);
-  const showMidline = useSmileStore((s) => s.showMidline);
-  const setShowMidline = useSmileStore((s) => s.setShowMidline);
-  const showGingivalLine = useSmileStore((s) => s.showGingivalLine);
-  const setShowGingivalLine = useSmileStore((s) => s.setShowGingivalLine);
+  const showOverlay = useViewportStore((s) => s.showOverlay);
+  const setShowOverlay = useViewportStore((s) => s.setShowOverlay);
+  const overlayOpacity = useViewportStore((s) => s.overlayOpacity);
+  const setOverlayOpacity = useViewportStore((s) => s.setOverlayOpacity);
+  const showSmileArc = useViewportStore((s) => s.showSmileArc);
+  const setShowSmileArc = useViewportStore((s) => s.setShowSmileArc);
+  const showMidline = useViewportStore((s) => s.showMidline);
+  const setShowMidline = useViewportStore((s) => s.setShowMidline);
+  const showGingivalLine = useViewportStore((s) => s.showGingivalLine);
+  const setShowGingivalLine = useViewportStore((s) => s.setShowGingivalLine);
 
-  const activeVariantId = useSmileStore((s) => s.activeVariantId);
-  const selectVariant = useSmileStore((s) => s.selectVariant);
+  const activeVariantId = useDesignStore((s) => s.activeVariantId);
+  const selectVariant = useDesignStore((s) => s.selectVariant);
   const selectedTooth = activeVariant?.teeth.find((t) => t.toothId === selectedToothId) ?? null;
-  const selectedShadeId = useSmileStore((s) => s.selectedShadeId);
-  const setSelectedShadeId = useSmileStore((s) => s.setSelectedShadeId);
-  const applyLibraryCollection = useSmileStore((s) => s.applyLibraryCollection);
-  const activeCollectionId = useSmileStore((s) => s.activeCollectionId);
-  const setActiveCollectionId = useSmileStore((s) => s.setActiveCollectionId);
+  const selectedShadeId = useDesignStore((s) => s.selectedShadeId);
+  const setSelectedShadeId = useDesignStore((s) => s.setSelectedShadeId);
+  const applyLibraryCollection = useDesignStore((s) => s.applyLibraryCollection);
+  const activeCollectionId = useViewportStore((s) => s.activeCollectionId);
+  const setActiveCollectionId = useViewportStore((s) => s.setActiveCollectionId);
 
   return (
     <div

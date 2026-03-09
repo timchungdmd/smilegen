@@ -1,17 +1,14 @@
-import {
-  useSmileStore,
-  selectActiveVariant
-} from "../../store/useSmileStore";
+import { useDesignStore, selectActiveVariant } from "../../store/useDesignStore";
 
 export function CompareView() {
-  const variants = useSmileStore((s) => s.variants);
-  const activeVariantId = useSmileStore((s) => s.activeVariantId);
-  const selectVariant = useSmileStore((s) => s.selectVariant);
-  const selectedToothId = useSmileStore((s) => s.selectedToothId);
-  const selectTooth = useSmileStore((s) => s.selectTooth);
-  const plan = useSmileStore((s) => s.plan);
-  const generatedDesign = useSmileStore((s) => s.generatedDesign);
-  const activeVariant = useSmileStore(selectActiveVariant);
+  const variants = useDesignStore((s) => s.variants);
+  const activeVariantId = useDesignStore((s) => s.activeVariantId);
+  const selectVariant = useDesignStore((s) => s.selectVariant);
+  const selectedToothId = useDesignStore((s) => s.selectedToothId);
+  const selectTooth = useDesignStore((s) => s.selectTooth);
+  const plan = useDesignStore((s) => s.plan);
+  const generatedDesign = useDesignStore((s) => s.generatedDesign);
+  const activeVariant = useDesignStore(selectActiveVariant);
 
   if (!generatedDesign || variants.length === 0) {
     return (

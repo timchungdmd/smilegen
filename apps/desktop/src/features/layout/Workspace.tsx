@@ -1,4 +1,4 @@
-import type { ViewId } from "../../store/useSmileStore";
+import type { ViewId } from "../../store/useViewportStore";
 import { ImportView } from "../views/ImportView";
 import { DesignView } from "../views/DesignView";
 import { CompareView } from "../views/CompareView";
