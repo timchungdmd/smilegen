@@ -5,6 +5,7 @@ import { CompareView } from "../views/CompareView";
 import { ExportView } from "../views/ExportView";
 import { CaseListView } from "../views/CaseListView";
 import { SettingsPanel } from "../settings/SettingsPanel";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 interface WorkspaceProps {
   activeView: ViewId;
@@ -39,13 +40,13 @@ export function Workspace({ activeView }: WorkspaceProps) {
         flexDirection: "column"
       }}
     >
-      <div style={show("cases")}><CaseListView /></div>
-      <div style={show("import")}><ImportView /></div>
-      <div style={show("design")}><DesignView /></div>
-      <div style={show("compare")}><CompareView /></div>
-      <div style={show("export")}><ExportView /></div>
+      <div style={show("cases")}><ErrorBoundary label="Cases"><CaseListView /></ErrorBoundary></div>
+      <div style={show("import")}><ErrorBoundary label="Import"><ImportView /></ErrorBoundary></div>
+      <div style={show("design")}><ErrorBoundary label="Design"><DesignView /></ErrorBoundary></div>
+      <div style={show("compare")}><ErrorBoundary label="Compare"><CompareView /></ErrorBoundary></div>
+      <div style={show("export")}><ErrorBoundary label="Export"><ExportView /></ErrorBoundary></div>
       <div style={{ ...show("settings"), padding: 24, overflow: "auto", maxWidth: 600 }}>
-        <SettingsPanel />
+        <ErrorBoundary label="Settings"><SettingsPanel /></ErrorBoundary>
       </div>
     </main>
   );

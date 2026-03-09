@@ -16,6 +16,7 @@ import { SmileMetricsPanel } from "../analysis/SmileMetricsPanel";
 import { BUNDLED_COLLECTIONS } from "../library/bundledLibrary";
 import type { ToothLibraryEntry } from "../library/toothLibraryTypes";
 import { ArchFormEditor } from "../alignment/ArchFormEditor";
+import { ErrorBoundary } from "../layout/ErrorBoundary";
 
 type DesignTab = "3d" | "photo";
 
@@ -226,20 +227,24 @@ export function DesignView() {
         {/* Viewport */}
         <div style={{ flex: 1, position: "relative", overflow: "hidden", padding: 12 }}>
           {activeTab === "3d" ? (
-            <SceneCanvas
-              archScanMesh={archScanMesh}
-              activeVariant={activeVariant}
-              selectedToothId={selectedToothId}
-              onSelectTooth={selectTooth}
-            />
+            <ErrorBoundary label="3D Canvas">
+              <SceneCanvas
+                archScanMesh={archScanMesh}
+                activeVariant={activeVariant}
+                selectedToothId={selectedToothId}
+                onSelectTooth={selectTooth}
+              />
+            </ErrorBoundary>
           ) : uploadedPhotos.length > 0 ? (
-            <PhotoOverlay
-              photo={uploadedPhotos[0]}
-              activeVariant={activeVariant}
-              selectedToothId={selectedToothId}
-              onSelectTooth={selectTooth}
-              onMoveTooth={moveTooth}
-            />
+            <ErrorBoundary label="Photo Overlay">
+              <PhotoOverlay
+                photo={uploadedPhotos[0]}
+                activeVariant={activeVariant}
+                selectedToothId={selectedToothId}
+                onSelectTooth={selectTooth}
+                onMoveTooth={moveTooth}
+              />
+            </ErrorBoundary>
           ) : (
             <div
               style={{
