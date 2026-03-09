@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
     secret_key: str = "dev-secret-change-in-prod"
+    aws_endpoint_url: str = ""
 
     class Config:
         env_file = ".env"
