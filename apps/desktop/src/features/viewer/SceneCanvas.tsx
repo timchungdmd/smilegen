@@ -7,6 +7,7 @@ import type { GeneratedVariantDesign } from "../engine/designEngine";
 import { detectCollisions } from "../geometry/collisionDetector";
 import { useDesignStore } from "../../store/useDesignStore";
 import { createToothMaterial } from "./materials/toothMaterial";
+import { DentalLighting } from "./DentalLighting";
 
 interface SceneCanvasProps {
   archScanMesh?: ParsedStlMesh | null;
@@ -312,16 +313,7 @@ function ArchCurveWireframe({ archHalfWidth = 35, archDepth = 15 }: { archHalfWi
   return <Line points={points} color="#00b4d8" lineWidth={1.5} opacity={0.4} transparent />;
 }
 
-function SceneLighting() {
-  return (
-    <>
-      <ambientLight intensity={0.4} />
-      <directionalLight position={[5, 8, 5]} intensity={0.8} castShadow />
-      <directionalLight position={[-3, 4, -2]} intensity={0.3} color="#b8d4e8" />
-      <directionalLight position={[0, -2, 5]} intensity={0.15} color="#ffe0c0" />
-    </>
-  );
-}
+// SceneLighting replaced by DentalLighting — see DentalLighting.tsx
 
 // ─── Axis indicator (CSS overlay — no second WebGL context) ──────────
 
@@ -453,7 +445,7 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
     <div className="viewer-container" style={{ flex: 1 }}>
       <Canvas shadows>
         <PerspectiveCamera makeDefault position={[0, 8, 30]} fov={45} />
-        <SceneLighting />
+        <DentalLighting />
 
         <AutoFrame bounds={archScanMesh?.bounds ?? null} />
 
