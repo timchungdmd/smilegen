@@ -4,6 +4,7 @@ import { useViewportStore } from "../../store/useViewportStore";
 import { useDesignStore, selectActiveVariant } from "../../store/useDesignStore";
 import { useImportStore } from "../../store/useImportStore";
 import { validateImportSet } from "../import/importService";
+import { IconUndo, IconRedo, IconDownload } from "../ui/icons";
 
 export function Header() {
   const caseRecord = useCaseStore((s) => s.caseRecord);
@@ -35,18 +36,7 @@ export function Header() {
   ];
 
   return (
-    <header
-      style={{
-        gridColumn: "1 / -1",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "0 16px",
-        background: "var(--bg-secondary)",
-        borderBottom: "1px solid var(--border)",
-        zIndex: 100
-      }}
-    >
+    <header className="app-header">
       {/* Left: brand + case info */}
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -101,23 +91,21 @@ export function Header() {
         {/* Undo / Redo */}
         <button
           className="btn-icon"
+          aria-label="Undo last change"
           title="Undo (Ctrl+Z)"
           onClick={() => useDesignStore.temporal?.getState()?.undo?.()}
           style={{ padding: 5 }}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z" />
-          </svg>
+          <IconUndo />
         </button>
         <button
           className="btn-icon"
+          aria-label="Redo"
           title="Redo (Ctrl+Y)"
           onClick={() => useDesignStore.temporal?.getState()?.redo?.()}
           style={{ padding: 5 }}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z" />
-          </svg>
+          <IconRedo />
         </button>
 
         <div style={{ height: 20, width: 1, background: "var(--border)", marginLeft: 2, marginRight: 2 }} />
@@ -129,9 +117,7 @@ export function Header() {
         )}
         {activeVariant && (
           <button className="btn btn-sm" onClick={downloadActiveStl}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
-            </svg>
+            <IconDownload width={14} height={14} />
             Export STL
           </button>
         )}

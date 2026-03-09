@@ -76,25 +76,20 @@ export function DesignToolbar() {
       )}
 
       {/* Toolbar */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "8px 16px",
-          borderBottom: "1px solid var(--border)",
-          gap: 8
-        }}
-      >
+      <div className="design-toolbar">
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div className="tab-bar">
+          <div role="tablist" aria-label="Design view" className="tab-bar">
             <button
+              role="tab"
+              aria-selected={designTab === "3d"}
               className={`tab ${designTab === "3d" ? "active" : ""}`}
               onClick={() => setDesignTab("3d")}
             >
               3D View
             </button>
             <button
+              role="tab"
+              aria-selected={designTab === "photo"}
               className={`tab ${designTab === "photo" ? "active" : ""}`}
               onClick={() => setDesignTab("photo")}
               disabled={uploadedPhotos.length === 0}
@@ -105,10 +100,12 @@ export function DesignToolbar() {
 
           {/* Variant tabs */}
           {generatedDesign && (
-            <div className="variant-tab-bar">
+            <div role="tablist" aria-label="Design variants" className="variant-tab-bar">
               {generatedDesign.variants.map((v) => (
                 <button
                   key={v.id}
+                  role="tab"
+                  aria-selected={v.id === activeVariantId}
                   className={`variant-tab ${v.id === activeVariantId ? "active" : ""}`}
                   onClick={() => selectVariant(v.id)}
                 >

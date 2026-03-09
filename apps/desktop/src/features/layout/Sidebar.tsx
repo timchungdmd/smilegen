@@ -16,6 +16,9 @@ const navItems: { id: ViewId; label: string; icon: string; group?: "top" | "bott
 function NavButton({ item, isActive, onClick }: { item: typeof navItems[0]; isActive: boolean; onClick: () => void }) {
   return (
     <button
+      role="tab"
+      aria-label={item.label}
+      aria-current={isActive ? "page" : undefined}
       onClick={onClick}
       title={item.label}
       style={{
@@ -68,18 +71,7 @@ export function Sidebar({ activeView }: SidebarProps) {
   const bottomItems = navItems.filter((i) => i.group === "bottom");
 
   return (
-    <aside
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "8px 0",
-        background: "var(--bg-secondary)",
-        borderRight: "1px solid var(--border)",
-        overflow: "hidden"
-      }}
-    >
+    <aside className="app-sidebar">
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
         {topItems.map((item) => (
           <NavButton
