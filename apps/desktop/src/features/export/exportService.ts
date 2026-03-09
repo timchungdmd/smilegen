@@ -1,5 +1,6 @@
 import type { MeshTriangle } from "../import/stlParser";
 import type { GeneratedVariantDesign } from "../engine/designEngine";
+import { createTriangleStl } from "../engine/designEngine";
 import { serializeToBinaryStl } from "./binaryStl";
 
 export type ExportFormat = "stl_ascii" | "stl_binary" | "obj";
@@ -29,7 +30,8 @@ export function exportVariant(
       break;
     }
     case "stl_ascii": {
-      blob = new Blob([variant.combinedStl], { type: "model/stl" });
+      const allTriangles = variant.teeth.flatMap((t) => t.previewTriangles);
+      blob = new Blob([createTriangleStl(name, allTriangles)], { type: "model/stl" });
       break;
     }
     case "obj": {

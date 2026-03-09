@@ -32,7 +32,6 @@ export interface GeneratedToothDesign {
   archAngle: number;
   facialVolume: number;
   trustState: "ready" | "needs_correction" | "blocked";
-  stl: string;
   previewTriangles: MeshTriangle[];
   sourceMesh?: ParsedStlMesh;
 }
@@ -44,7 +43,6 @@ export interface GeneratedVariantDesign {
   lengthTendency: string;
   additiveIntensity: string;
   teeth: GeneratedToothDesign[];
-  combinedStl: string;
 }
 
 export interface GeneratedSmileDesign {
@@ -223,8 +221,7 @@ export function updateVariantToothDimensions(
 
   return {
     ...variant,
-    teeth,
-    combinedStl: combineToothStls("smilegen", teeth.map((tooth) => tooth.stl))
+    teeth
   };
 }
 
@@ -250,8 +247,7 @@ export function updateVariantToothPlacement(
 
   return {
     ...variant,
-    teeth,
-    combinedStl: combineToothStls("smilegen", teeth.map((tooth) => tooth.stl))
+    teeth
   };
 }
 
@@ -322,8 +318,7 @@ function createVariantDesign(
     id: `variant-${label}`,
     label,
     ...VARIANT_DESCRIPTORS[label],
-    teeth,
-    combinedStl: combineToothStls("smilegen", teeth.map((tooth) => tooth.stl))
+    teeth
   };
 }
 
@@ -412,7 +407,6 @@ function createToothDesign(input: {
     archAngle: round(input.archAngle),
     facialVolume: round(input.facialVolume),
     trustState,
-    stl: meshResult.stl,
     previewTriangles: meshResult.triangles,
     sourceMesh: input.sourceMesh
   };
@@ -466,7 +460,6 @@ function rebuildToothDesign(
     archAngle: round(geometry.archAngle ?? tooth.archAngle),
     facialVolume: round(geometry.facialVolume),
     trustState,
-    stl: meshResult.stl,
     previewTriangles: meshResult.triangles
   };
 }
@@ -533,24 +526,6 @@ const TRIANGLES: [number, number, number][] = [
   [3, 4, 0]
 ];
 
-function createAsciiStl(name: string, vertices: MeshVertex[], faces: [number, number, number][]) {
-  const lines = [`solid ${name}`];
-
-  for (const [a, b, c] of faces) {
-    const normal = computeNormal(vertices[a], vertices[b], vertices[c]);
-    lines.push(`  facet normal ${normal.x} ${normal.y} ${normal.z}`);
-    lines.push("    outer loop");
-    lines.push(`      vertex ${formatVertex(vertices[a])}`);
-    lines.push(`      vertex ${formatVertex(vertices[b])}`);
-    lines.push(`      vertex ${formatVertex(vertices[c])}`);
-    lines.push("    endloop");
-    lines.push("  endfacet");
-  }
-
-  lines.push(`endsolid ${name}`);
-  return lines.join("\n");
-}
-
 function buildMeshBackedGeometry(
   mesh: ParsedStlMesh,
   target: {
@@ -572,8 +547,7 @@ function buildMeshBackedGeometry(
   );
 
   return {
-    triangles: transformedTriangles,
-    stl: createTriangleStl(`tooth_mesh`, transformedTriangles)
+    triangles: transformedTriangles
   };
 }
 
@@ -601,12 +575,11 @@ function buildProceduralGeometry(input: {
   }));
 
   return {
-    triangles,
-    stl: createAsciiStl(`tooth_${input.toothId}`, vertices, TRIANGLES)
+    triangles
   };
 }
 
-function createTriangleStl(name: string, triangles: MeshTriangle[]) {
+export function createTriangleStl(name: string, triangles: MeshTriangle[]) {
   const lines = [`solid ${name}`];
 
   for (const triangle of triangles) {
@@ -661,14 +634,6 @@ function transformVertex(
     y: (vertex.y - meshCenterY) * transform.depthScale + transform.positionY,
     z: (vertex.z - bounds.minZ) * transform.heightScale
   };
-}
-
-function combineToothStls(name: string, stls: string[]) {
-  const body = stls
-    .flatMap((stl) => stl.split("\n").filter((line) => !line.startsWith("solid ") && !line.startsWith("endsolid ")))
-    .join("\n");
-
-  return `solid ${name}\n${body}\nendsolid ${name}`;
 }
 
 function formatVertex(vertex: MeshVertex) {

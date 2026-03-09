@@ -29,6 +29,7 @@ import {
   updateVariantToothDimensions,
   updateVariantToothPlacement,
 } from "../features/engine/designEngine";
+import { exportVariant } from "../features/export/exportService";
 import { createVariantGenerationRequest } from "../features/engine/engineClient";
 import type { VariantGenerationRequest } from "../features/engine/engineTypes";
 import { DEFAULT_SHADE } from "../features/color/shadeGuide";
@@ -366,13 +367,11 @@ export const useDesignStore = create<DesignStore>()(
         const activeVariant = selectActiveVariant(get());
         if (!activeVariant || typeof document === "undefined") return;
 
-        const blob = new Blob([activeVariant.combinedStl], { type: "model/stl" });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${activeVariant.id}.stl`;
-        link.click();
-        URL.revokeObjectURL(url);
+        exportVariant(activeVariant, {
+          format: "stl_binary",
+          filename: `${activeVariant.id}.stl`,
+          includeAllVariants: false
+        });
       },
 
       markReadyForDoctor: () => {

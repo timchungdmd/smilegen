@@ -79,7 +79,9 @@ export function ExportView() {
           <div className="panel-body" style={{ display: "grid", gap: 12 }}>
             {generatedDesign.variants.map((variant) => {
               const isActive = variant.id === activeVariantId;
-              const sizeKB = (variant.combinedStl.length / 1024).toFixed(1);
+              const triangleCount = variant.teeth.reduce((s, t) => s + t.previewTriangles.length, 0);
+              // Binary STL: 80-byte header + 4-byte count + 50 bytes per triangle
+              const sizeKB = ((84 + triangleCount * 50) / 1024).toFixed(1);
 
               return (
                 <div
@@ -92,20 +94,18 @@ export function ExportView() {
                       {variant.label}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                      {variant.teeth.length} teeth &middot; {sizeKB} KB
+                      {variant.teeth.length} teeth &middot; ~{sizeKB} KB
                     </div>
                   </div>
                   <button
                     className="btn btn-sm"
-                    onClick={() => {
-                      const blob = new Blob([variant.combinedStl], { type: "model/stl" });
-                      const url = URL.createObjectURL(blob);
-                      const link = document.createElement("a");
-                      link.href = url;
-                      link.download = `SmileGen_${variant.label}_${variant.id.slice(0, 8)}.stl`;
-                      link.click();
-                      URL.revokeObjectURL(url);
-                    }}
+                    onClick={() =>
+                      exportVariant(variant, {
+                        format: "stl_binary",
+                        filename: `SmileGen_${variant.label}_${variant.id.slice(0, 8)}`,
+                        includeAllVariants: false
+                      })
+                    }
                   >
                     Download
                   </button>

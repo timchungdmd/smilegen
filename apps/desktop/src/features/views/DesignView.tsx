@@ -379,9 +379,9 @@ export function DesignView() {
                 <span className="label-value">{activeVariant.teeth.length}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-                <span style={{ color: "var(--text-secondary)" }}>STL Size</span>
+                <span style={{ color: "var(--text-secondary)" }}>Triangles</span>
                 <span className="label-value">
-                  {(activeVariant.combinedStl.length / 1024).toFixed(1)} KB
+                  {activeVariant.teeth.reduce((s, t) => s + t.previewTriangles.length, 0)}
                 </span>
               </div>
             </div>
