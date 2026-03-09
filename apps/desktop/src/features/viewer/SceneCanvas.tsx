@@ -6,6 +6,7 @@ import type { ParsedStlMesh } from "../import/stlParser";
 import type { GeneratedVariantDesign } from "../engine/designEngine";
 import { detectCollisions } from "../geometry/collisionDetector";
 import { useDesignStore } from "../../store/useDesignStore";
+import { createToothMaterial } from "./materials/toothMaterial";
 
 interface SceneCanvasProps {
   archScanMesh?: ParsedStlMesh | null;
@@ -198,6 +199,12 @@ function ToothMesh({
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
 
+  const material = useMemo(
+    () => createToothMaterial({ shade: (tooth as any).shadeId as "A1" | "A2" | "A3" | "B1" | "B2" }),
+    [(tooth as any).shadeId]
+  );
+  useEffect(() => () => { material.dispose(); }, [material]);
+
   const posZ = (tooth as any).positionZ ?? 0;
   const archAngle = (tooth as any).archAngle ?? 0;
 
@@ -277,12 +284,12 @@ function ToothMesh({
         document.body.style.cursor = "default";
       }}
     >
-      <meshStandardMaterial
-        color={hasCollision ? "#ef476f" : selected ? "#00b4d8" : "#f0e8d8"}
+      {/* PBR enamel material; override color for selection/collision states */}
+      <primitive
+        object={material}
+        attach="material"
+        color={hasCollision ? "#ef476f" : selected ? "#00b4d8" : undefined}
         emissive={hasCollision ? "#4d0015" : selected ? "#003d4d" : "#000000"}
-        metalness={0.05}
-        roughness={0.5}
-        side={THREE.DoubleSide}
       />
     </mesh>
   );
