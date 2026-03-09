@@ -5,6 +5,19 @@ import { useImportStore } from "./store/useImportStore";
 import { useDesignStore } from "./store/useDesignStore";
 import { useCaseStore } from "./store/useCaseStore";
 
+// Prevent IndexedDB errors: all views are now mounted simultaneously (display:none
+// persistence), which means the auto-save subscription can fire during tests and
+// attempt a real IndexedDB write (unavailable in jsdom).
+vi.mock("idb-keyval", () => ({
+  createStore: vi.fn(() => ({})),
+  get: vi.fn().mockResolvedValue(undefined),
+  set: vi.fn().mockResolvedValue(undefined),
+  del: vi.fn().mockResolvedValue(undefined),
+  keys: vi.fn().mockResolvedValue([]),
+  entries: vi.fn().mockResolvedValue([]),
+  update: vi.fn().mockResolvedValue(undefined)
+}));
+
 // Mock 3D components which use R3F (not available in jsdom)
 vi.mock("./features/viewer/SceneCanvas", () => ({
   SceneCanvas: () => <div data-testid="scene-canvas">3D Viewer Mock</div>
@@ -115,8 +128,8 @@ test("renders the dental CAD shell with sidebar navigation", () => {
   expect(screen.getAllByText("Design").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("Compare").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("Export").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText("Cases")).toBeInTheDocument();
-  expect(screen.getByText("Settings")).toBeInTheDocument();
+  expect(screen.getAllByText("Cases").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("Settings").length).toBeGreaterThanOrEqual(1);
 });
 
 test("starts on the import view with upload zones", () => {
@@ -124,7 +137,7 @@ test("starts on the import view with upload zones", () => {
   expect(screen.getAllByText("Import Assets").length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("Patient Photos")).toBeInTheDocument();
   expect(screen.getByText("Arch Scan")).toBeInTheDocument();
-  expect(screen.getByText("Tooth Library")).toBeInTheDocument();
+  expect(screen.getAllByText("Tooth Library").length).toBeGreaterThanOrEqual(1);
 });
 
 test("imports an arch scan and updates store", async () => {
