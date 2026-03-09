@@ -2,7 +2,6 @@ import { useRef, useState, useCallback, useMemo, useEffect } from "react";
 import type { UploadedPhoto } from "../../store/useImportStore";
 import { useImportStore } from "../../store/useImportStore";
 import { useViewportStore } from "../../store/useViewportStore";
-import type { AlignmentMarker } from "../../store/useViewportStore";
 import { useDesignStore } from "../../store/useDesignStore";
 import type { GeneratedVariantDesign } from "../engine/designEngine";
 import {
@@ -11,6 +10,8 @@ import {
   type AlignmentCalibration
 } from "../alignment/archModel";
 import { PhotoOverlayToolbar } from "./PhotoOverlayToolbar";
+import { AlignmentMarkers } from "./AlignmentMarkers";
+import { OverlayGuides } from "./OverlayGuides";
 
 interface PhotoOverlayProps {
   photo: UploadedPhoto;
@@ -148,10 +149,10 @@ export function PhotoOverlay({
     return { x: e.clientX, y: e.clientY };
   }, []);
 
-  const handleMouseDown = useCallback(
-    (type: "midline" | "smileArc" | "gingival" | "commissureL" | "commissureR", e: React.MouseEvent) => {
+  const handleGuideMouseDown = useCallback(
+    (type: "midline" | "smileArc" | "gingival" | "commissureL" | "commissureR", e: React.MouseEvent<SVGElement>) => {
       e.stopPropagation();
-      const pt = getSvgPoint(e);
+      const pt = getSvgPoint(e as unknown as React.MouseEvent);
       const startValue =
         type === "midline" ? midlineX
           : type === "smileArc" ? smileArcY
@@ -164,9 +165,9 @@ export function PhotoOverlay({
   );
 
   const handleMarkerMouseDown = useCallback(
-    (markerId: string, e: React.MouseEvent) => {
+    (markerId: string, e: React.MouseEvent<SVGGElement>) => {
       e.stopPropagation();
-      const pt = getSvgPoint(e);
+      const pt = getSvgPoint(e as unknown as React.MouseEvent);
       setDragState({ type: "marker", id: markerId, startX: pt.x, startY: pt.y, startValue: 0 });
     },
     [getSvgPoint]
@@ -174,7 +175,6 @@ export function PhotoOverlay({
 
   const handlePanMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      // Only start pan on middle click or when space is held (detected via no other drag)
       if (e.button === 1 || (e.button === 0 && e.altKey)) {
         e.preventDefault();
         const pt = getClientPoint(e);
@@ -212,26 +212,19 @@ export function PhotoOverlay({
       const pt = getSvgPoint(e);
 
       if (dragState.type === "midline") {
-        const pct = (pt.x / viewWidth) * 100;
-        setMidlineX(Math.max(10, Math.min(90, pct)));
+        setMidlineX(Math.max(10, Math.min(90, (pt.x / viewWidth) * 100)));
       } else if (dragState.type === "smileArc") {
-        const pct = (pt.y / viewHeight) * 100;
-        setSmileArcY(Math.max(20, Math.min(80, pct)));
+        setSmileArcY(Math.max(20, Math.min(80, (pt.y / viewHeight) * 100)));
       } else if (dragState.type === "gingival") {
-        const pct = (pt.y / viewHeight) * 100;
-        setGingivalLineY(Math.max(10, Math.min(70, pct)));
+        setGingivalLineY(Math.max(10, Math.min(70, (pt.y / viewHeight) * 100)));
       } else if (dragState.type === "commissureL") {
-        const pct = (pt.x / viewWidth) * 100;
-        setLeftCommissureX(Math.max(5, Math.min(45, pct)));
+        setLeftCommissureX(Math.max(5, Math.min(45, (pt.x / viewWidth) * 100)));
       } else if (dragState.type === "commissureR") {
-        const pct = (pt.x / viewWidth) * 100;
-        setRightCommissureX(Math.max(55, Math.min(95, pct)));
+        setRightCommissureX(Math.max(55, Math.min(95, (pt.x / viewWidth) * 100)));
       } else if (dragState.type === "marker" && dragState.id) {
-        const pctX = (pt.x / viewWidth) * 100;
-        const pctY = (pt.y / viewHeight) * 100;
         updateAlignmentMarker(dragState.id, {
-          x: Math.max(2, Math.min(98, pctX)),
-          y: Math.max(2, Math.min(98, pctY))
+          x: Math.max(2, Math.min(98, (pt.x / viewWidth) * 100)),
+          y: Math.max(2, Math.min(98, (pt.y / viewHeight) * 100))
         });
       } else if (dragState.type === "tooth" && dragState.id) {
         const dx = (pt.x - dragState.startX) * 0.05;
@@ -251,22 +244,27 @@ export function PhotoOverlay({
     ]
   );
 
-  const handleMouseUp = useCallback(() => {
-    setDragState(null);
-  }, []);
+  const handleMouseUp = useCallback(() => setDragState(null), []);
 
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
+  // Passive wheel fix: React synthetic onWheel is passive in modern browsers,
+  // preventing e.preventDefault() from stopping page scroll. Attach natively.
+  const photoZoomRef = useRef(photoZoom);
+  photoZoomRef.current = photoZoom;
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
       e.preventDefault();
       const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      setPhotoZoom(photoZoom + delta);
-    },
-    [photoZoom, setPhotoZoom]
-  );
+      setPhotoZoom(photoZoomRef.current + delta);
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, [setPhotoZoom]);
 
   const teeth = activeVariant?.teeth ?? [];
 
-  // Project teeth
+  // Project teeth onto photo coordinates
   const projectedTeeth = useMemo(
     () =>
       teeth.map((tooth) => ({
@@ -276,7 +274,7 @@ export function PhotoOverlay({
     [teeth, calibration]
   );
 
-  // Build arch curve from alignment markers to show the detected arch shape
+  // Build arch curve from alignment markers
   const markerArchPath = useMemo(() => {
     if (alignmentMarkers.length < 3) return "";
     const sorted = [...alignmentMarkers].sort((a, b) => a.x - b.x);
@@ -284,7 +282,6 @@ export function PhotoOverlay({
       x: (m.x / 100) * viewWidth,
       y: (m.y / 100) * viewHeight
     }));
-    // Catmull-Rom spline through the points
     if (points.length < 2) return "";
     const segments: string[] = [];
     segments.push(`M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`);
@@ -302,9 +299,8 @@ export function PhotoOverlay({
     return segments.join(" ");
   }, [alignmentMarkers, viewWidth, viewHeight]);
 
-  // Smile arc: if teeth exist, trace their incisal edges; otherwise draw from calibration
+  // Smile arc data (from teeth or parabolic fallback)
   const smileArcData = useMemo(() => {
-    // When teeth are projected, build a smooth arc through their bottom edges
     if (projectedTeeth.length >= 3) {
       const sorted = [...projectedTeeth].sort((a, b) => a.projected.x - b.projected.x);
       const pts = sorted.map(({ tooth, projected }) => {
@@ -313,26 +309,22 @@ export function PhotoOverlay({
       });
       return { points: pts, centerY: pts[Math.floor(pts.length / 2)].y };
     }
-
-    // No teeth — draw a parabolic arc from the calibration
     const incisalY = calibration.incisalY;
     const lx = (leftCommissureX / 100) * viewWidth;
     const rx = (rightCommissureX / 100) * viewWidth;
     const cx = calibration.midlineX;
     const halfSpan = (rx - lx) / 2;
     const pts: { x: number; y: number }[] = [];
-    const steps = 40;
-    for (let i = 0; i <= steps; i++) {
-      const t = (i / steps) * 2 - 1; // -1 to 1
+    for (let i = 0; i <= 40; i++) {
+      const t = (i / 40) * 2 - 1;
       const x = cx + t * halfSpan;
-      // Parabolic dip: center is lowest (incisalY), edges rise
       const rise = halfSpan * 0.15 * t * t;
       pts.push({ x, y: incisalY - rise });
     }
     return { points: pts, centerY: incisalY };
   }, [projectedTeeth, calibration, leftCommissureX, rightCommissureX, viewWidth]);
 
-  // Build smooth SVG path through smile arc points (Catmull-Rom)
+  // Smooth Catmull-Rom path through smile arc points
   const smileArcPath = useMemo(() => {
     const pts = smileArcData.points;
     if (pts.length < 2) return "";
@@ -351,9 +343,6 @@ export function PhotoOverlay({
     return d.join(" ");
   }, [smileArcData]);
 
-  const markerColor = (type: AlignmentMarker["type"]) =>
-    type === "incisal" ? "#06d6a0" : "#ffd166";
-
   return (
     <div
       ref={containerRef}
@@ -366,7 +355,6 @@ export function PhotoOverlay({
         overflow: "hidden",
         cursor: dragState?.type === "pan" ? "grabbing" : "default"
       }}
-      onWheel={handleWheel}
       onMouseDown={handlePanMouseDown}
     >
       {/* Photo layer with pan/zoom transform */}
@@ -412,174 +400,32 @@ export function PhotoOverlay({
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
           >
-            {/* Alignment markers arch curve */}
-            {markerArchPath && (
-              <path
-                d={markerArchPath}
-                fill="none"
-                stroke="#06d6a0"
-                strokeWidth="2"
-                strokeDasharray="8 4"
-                opacity="0.6"
-              />
-            )}
+            {/* Alignment markers (arch curve + crosshairs) */}
+            <AlignmentMarkers
+              markers={alignmentMarkers}
+              viewWidth={viewWidth}
+              viewHeight={viewHeight}
+              markerArchPath={markerArchPath}
+              onMarkerMouseDown={handleMarkerMouseDown}
+            />
 
-            {/* Alignment markers */}
-            {alignmentMarkers.map((marker) => {
-              const mx = (marker.x / 100) * viewWidth;
-              const my = (marker.y / 100) * viewHeight;
-              const color = markerColor(marker.type);
-              return (
-                <g
-                  key={marker.id}
-                  cursor="grab"
-                  onMouseDown={(e) => handleMarkerMouseDown(marker.id, e)}
-                >
-                  {/* Crosshair */}
-                  <line x1={mx - 8} y1={my} x2={mx + 8} y2={my} stroke={color} strokeWidth="1" opacity="0.5" />
-                  <line x1={mx} y1={my - 8} x2={mx} y2={my + 8} stroke={color} strokeWidth="1" opacity="0.5" />
-                  {/* Marker dot */}
-                  <circle cx={mx} cy={my} r="5" fill={color} opacity="0.85" stroke="#000" strokeWidth="1" />
-                  {/* Label */}
-                  <text
-                    x={mx}
-                    y={my - 10}
-                    textAnchor="middle"
-                    fill={color}
-                    fontSize="9"
-                    fontWeight="600"
-                  >
-                    {marker.type === "incisal" ? `#${marker.toothId}` : `C${marker.toothId}`}
-                  </text>
-                </g>
-              );
-            })}
+            {/* Calibration guides (smile arc, midline, gingival, commissures) */}
+            <OverlayGuides
+              showMidline={showMidline}
+              showSmileArc={showSmileArc}
+              showGingivalLine={showGingivalLine}
+              viewWidth={viewWidth}
+              viewHeight={viewHeight}
+              calibration={calibration}
+              smileArcPath={smileArcPath}
+              smileArcData={smileArcData}
+              gingivalLineY={gingivalLineY}
+              leftCommissureX={leftCommissureX}
+              rightCommissureX={rightCommissureX}
+              onGuideMouseDown={handleGuideMouseDown}
+            />
 
-            {/* Smile arc curve */}
-            {showSmileArc && smileArcPath && (() => {
-              const pts = smileArcData.points;
-              const leftPt = pts[0];
-              const rightPt = pts[pts.length - 1];
-              const midPt = pts[Math.floor(pts.length / 2)];
-              return (
-                <g>
-                  {/* Glow behind the arc */}
-                  <path
-                    d={smileArcPath}
-                    fill="none"
-                    stroke="#00b4d8"
-                    strokeWidth="5"
-                    opacity="0.1"
-                    strokeLinecap="round"
-                  />
-                  {/* Main arc line */}
-                  <path
-                    d={smileArcPath}
-                    fill="none"
-                    stroke="#00b4d8"
-                    strokeWidth="2"
-                    opacity="0.8"
-                    strokeLinecap="round"
-                  />
-                  {/* Center drag handle */}
-                  <g cursor="ns-resize" onMouseDown={(e) => handleMouseDown("smileArc", e)}>
-                    <circle cx={midPt.x} cy={midPt.y} r="10" fill="transparent" />
-                    <circle cx={midPt.x} cy={midPt.y} r="5" fill="#00b4d8" opacity="0.9" stroke="#fff" strokeWidth="1.5" />
-                  </g>
-                  {/* Left endpoint */}
-                  <circle cx={leftPt.x} cy={leftPt.y} r="3" fill="#00b4d8" opacity="0.5" />
-                  {/* Right endpoint */}
-                  <circle cx={rightPt.x} cy={rightPt.y} r="3" fill="#00b4d8" opacity="0.5" />
-                  {/* Label */}
-                  <text
-                    x={rightPt.x + 8}
-                    y={rightPt.y + 4}
-                    fill="#00b4d8"
-                    fontSize="9"
-                    fontWeight="500"
-                    opacity="0.7"
-                  >
-                    Smile Arc
-                  </text>
-                </g>
-              );
-            })()}
-
-            {/* Midline guide */}
-            {showMidline && (() => {
-              const mx = calibration.midlineX;
-              const y1 = viewHeight * 0.08;
-              const y2 = viewHeight * 0.92;
-              return (
-                <g>
-                  <line x1={mx} y1={y1} x2={mx} y2={y2} stroke="#ef476f" strokeWidth="1" strokeDasharray="6 4" opacity="0.5" />
-                  {/* Top handle */}
-                  <g cursor="ew-resize" onMouseDown={(e) => handleMouseDown("midline", e)}>
-                    <circle cx={mx} cy={y1} r="10" fill="transparent" />
-                    <circle cx={mx} cy={y1} r="5" fill="#ef476f" opacity="0.85" stroke="#fff" strokeWidth="1.5" />
-                  </g>
-                  {/* Bottom handle */}
-                  <g cursor="ew-resize" onMouseDown={(e) => handleMouseDown("midline", e)}>
-                    <circle cx={mx} cy={y2} r="10" fill="transparent" />
-                    <circle cx={mx} cy={y2} r="4" fill="#ef476f" opacity="0.5" />
-                  </g>
-                  <text x={mx + 8} y={y1 + 4} fill="#ef476f" fontSize="9" fontWeight="500" opacity="0.7">
-                    Midline
-                  </text>
-                </g>
-              );
-            })()}
-
-            {/* Gingival line guide */}
-            {showGingivalLine && (() => {
-              const gy = (gingivalLineY / 100) * viewHeight;
-              const lx = (leftCommissureX / 100) * viewWidth;
-              const rx = (rightCommissureX / 100) * viewWidth;
-              return (
-                <g>
-                  <line x1={lx} y1={gy} x2={rx} y2={gy} stroke="#d4736c" strokeWidth="1.5" strokeDasharray="6 4" opacity="0.5" />
-                  {/* Left handle */}
-                  <g cursor="ns-resize" onMouseDown={(e) => handleMouseDown("gingival", e)}>
-                    <circle cx={lx} cy={gy} r="10" fill="transparent" />
-                    <circle cx={lx} cy={gy} r="5" fill="#d4736c" opacity="0.85" stroke="#fff" strokeWidth="1.5" />
-                  </g>
-                  {/* Right endpoint */}
-                  <circle cx={rx} cy={gy} r="3" fill="#d4736c" opacity="0.5" />
-                  <text x={rx + 8} y={gy + 4} fill="#d4736c" fontSize="9" fontWeight="500" opacity="0.7">
-                    Gingival
-                  </text>
-                </g>
-              );
-            })()}
-
-            {/* Commissure guides (smile corners) */}
-            {(() => {
-              const lx = (leftCommissureX / 100) * viewWidth;
-              const rx = (rightCommissureX / 100) * viewWidth;
-              const cy = calibration.incisalY;
-              return (
-                <g>
-                  {/* Connecting line */}
-                  <line x1={lx} y1={cy} x2={rx} y2={cy} stroke="#ffd166" strokeWidth="0.5" strokeDasharray="4 4" opacity="0.25" />
-                  {/* Left commissure */}
-                  <line x1={lx} y1={cy - 24} x2={lx} y2={cy + 24} stroke="#ffd166" strokeWidth="1" strokeDasharray="4 3" opacity="0.4" />
-                  <g cursor="ew-resize" onMouseDown={(e) => handleMouseDown("commissureL", e)}>
-                    <circle cx={lx} cy={cy} r="10" fill="transparent" />
-                    <circle cx={lx} cy={cy} r="5" fill="#ffd166" opacity="0.85" stroke="#000" strokeWidth="1" />
-                  </g>
-                  <text x={lx} y={cy - 28} fill="#ffd166" fontSize="8" fontWeight="600" textAnchor="middle" opacity="0.7">L</text>
-                  {/* Right commissure */}
-                  <line x1={rx} y1={cy - 24} x2={rx} y2={cy + 24} stroke="#ffd166" strokeWidth="1" strokeDasharray="4 3" opacity="0.4" />
-                  <g cursor="ew-resize" onMouseDown={(e) => handleMouseDown("commissureR", e)}>
-                    <circle cx={rx} cy={cy} r="10" fill="transparent" />
-                    <circle cx={rx} cy={cy} r="5" fill="#ffd166" opacity="0.85" stroke="#000" strokeWidth="1" />
-                  </g>
-                  <text x={rx} y={cy - 28} fill="#ffd166" fontSize="8" fontWeight="600" textAnchor="middle" opacity="0.7">R</text>
-                </g>
-              );
-            })()}
-
-            {/* Perspective-projected teeth overlay */}
+            {/* Perspective-projected teeth */}
             {projectedTeeth.map(({ tooth, projected }) => {
               const tw = Math.max(tooth.width * calibration.scale * projected.scale, 14);
               const th = Math.max(tooth.height * calibration.scale * projected.scale * 0.9, 20);
