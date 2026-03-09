@@ -1,4 +1,5 @@
 import { MAX_TRIANGLES } from "./importConstants";
+import { computeBounds } from "../geometry/meshUtils";
 
 export interface MeshVertex {
   x: number;
@@ -68,7 +69,7 @@ export function parseStlArrayBuffer(buffer: ArrayBuffer, name: string): ParsedSt
     triangles = parseAsciiTriangles(getFullText());
   }
 
-  const boundsResult = createBoundsFromTriangles(triangles);
+  const boundsResult = computeBounds(triangles);
 
   if (boundsResult.vertexCount === 0) {
     throw new Error(`No vertices found in STL: ${name}`);
@@ -76,7 +77,7 @@ export function parseStlArrayBuffer(buffer: ArrayBuffer, name: string): ParsedSt
 
   return {
     name,
-    bounds: boundsResult.bounds,
+    bounds: boundsResult,
     vertexCount: boundsResult.vertexCount,
     triangles
   };
@@ -168,52 +169,4 @@ function parseBinaryTriangles(buffer: ArrayBuffer): MeshTriangle[] {
   return triangles;
 }
 
-function createBoundsFromTriangles(triangles: MeshTriangle[]) {
-  let minX = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-  let minZ = Number.POSITIVE_INFINITY;
-  let maxZ = Number.NEGATIVE_INFINITY;
-  let vertexCount = 0;
 
-  for (const triangle of triangles) {
-    const triangleVertices = [triangle.a, triangle.b, triangle.c];
-
-    for (const vertex of triangleVertices) {
-      if (!isFiniteVertex(vertex)) {
-        continue;
-      }
-
-      vertexCount += 1;
-      minX = Math.min(minX, vertex.x);
-      maxX = Math.max(maxX, vertex.x);
-      minY = Math.min(minY, vertex.y);
-      maxY = Math.max(maxY, vertex.y);
-      minZ = Math.min(minZ, vertex.z);
-      maxZ = Math.max(maxZ, vertex.z);
-    }
-  }
-
-  const safeMinX = vertexCount > 0 ? minX : 0;
-  const safeMaxX = vertexCount > 0 ? maxX : 0;
-  const safeMinY = vertexCount > 0 ? minY : 0;
-  const safeMaxY = vertexCount > 0 ? maxY : 0;
-  const safeMinZ = vertexCount > 0 ? minZ : 0;
-  const safeMaxZ = vertexCount > 0 ? maxZ : 0;
-
-  return {
-    bounds: {
-      minX: safeMinX,
-      maxX: safeMaxX,
-      minY: safeMinY,
-      maxY: safeMaxY,
-      minZ: safeMinZ,
-      maxZ: safeMaxZ,
-      width: Number((safeMaxX - safeMinX).toFixed(3)),
-      depth: Number((safeMaxY - safeMinY).toFixed(3)),
-      height: Number((safeMaxZ - safeMinZ).toFixed(3))
-    },
-    vertexCount
-  };
-}

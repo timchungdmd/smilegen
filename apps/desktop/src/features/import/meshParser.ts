@@ -5,6 +5,7 @@
 
 import { parseStlArrayBuffer, type ParsedStlMesh, type MeshTriangle, type MeshVertex } from "./stlParser";
 import { MAX_TRIANGLES, MESH_EXTENSIONS } from "./importConstants";
+import { computeBounds } from "../geometry/meshUtils";
 
 export function isMeshFile(filename: string): boolean {
   const ext = filename.toLowerCase().split(".").pop() ?? "";
@@ -77,10 +78,8 @@ function parseObjBuffer(buffer: ArrayBuffer, name: string): ParsedStlMesh {
     throw new Error(`No faces found in OBJ file: ${name}`);
   }
 
-  return {
-    name,
-    ...computeBounds(triangles)
-  };
+  const b = computeBounds(triangles);
+  return { name, bounds: b, vertexCount: b.vertexCount, triangles };
 }
 
 // ─── PLY Parser ───────────────────────────────────────────────────────
@@ -176,7 +175,8 @@ function parsePlyBuffer(buffer: ArrayBuffer, name: string): ParsedStlMesh {
     throw new Error(`No faces found in PLY file: ${name}`);
   }
 
-  return { name, ...computeBounds(triangles) };
+  const b = computeBounds(triangles);
+  return { name, bounds: b, vertexCount: b.vertexCount, triangles };
 }
 
 function parsePlyBinary(
@@ -239,42 +239,10 @@ function parsePlyBinary(
     throw new Error(`No faces found in binary PLY file: ${name}`);
   }
 
-  return { name, ...computeBounds(triangles) };
+  const b = computeBounds(triangles);
+  return { name, bounds: b, vertexCount: b.vertexCount, triangles };
 }
 
 // ─── Shared utilities ─────────────────────────────────────────────────
 
-function computeBounds(triangles: MeshTriangle[]) {
-  let minX = Infinity, maxX = -Infinity;
-  let minY = Infinity, maxY = -Infinity;
-  let minZ = Infinity, maxZ = -Infinity;
-  let vertexCount = 0;
 
-  for (const tri of triangles) {
-    for (const v of [tri.a, tri.b, tri.c]) {
-      if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.z)) continue;
-      vertexCount++;
-      if (v.x < minX) minX = v.x;
-      if (v.x > maxX) maxX = v.x;
-      if (v.y < minY) minY = v.y;
-      if (v.y > maxY) maxY = v.y;
-      if (v.z < minZ) minZ = v.z;
-      if (v.z > maxZ) maxZ = v.z;
-    }
-  }
-
-  if (vertexCount === 0) {
-    minX = maxX = minY = maxY = minZ = maxZ = 0;
-  }
-
-  return {
-    bounds: {
-      minX, maxX, minY, maxY, minZ, maxZ,
-      width: Number((maxX - minX).toFixed(3)),
-      depth: Number((maxY - minY).toFixed(3)),
-      height: Number((maxZ - minZ).toFixed(3))
-    },
-    vertexCount,
-    triangles
-  };
-}

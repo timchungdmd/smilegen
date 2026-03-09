@@ -1,16 +1,21 @@
 import type { MeshTriangle, MeshVertex, ParsedStlMesh, MeshBounds } from "../import/stlParser";
 
-/** Recompute bounds from triangles */
-export function computeBounds(triangles: MeshTriangle[]): MeshBounds {
+/** Recompute bounds from triangles, skipping non-finite vertices. */
+export function computeBounds(triangles: MeshTriangle[]): MeshBounds & { vertexCount: number } {
   let minX = Number.POSITIVE_INFINITY;
   let maxX = Number.NEGATIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
   let minZ = Number.POSITIVE_INFINITY;
   let maxZ = Number.NEGATIVE_INFINITY;
+  let vertexCount = 0;
 
   for (const triangle of triangles) {
     for (const vertex of [triangle.a, triangle.b, triangle.c]) {
+      if (!Number.isFinite(vertex.x) || !Number.isFinite(vertex.y) || !Number.isFinite(vertex.z)) {
+        continue;
+      }
+      vertexCount++;
       minX = Math.min(minX, vertex.x);
       maxX = Math.max(maxX, vertex.x);
       minY = Math.min(minY, vertex.y);
@@ -20,8 +25,8 @@ export function computeBounds(triangles: MeshTriangle[]): MeshBounds {
     }
   }
 
-  if (triangles.length === 0) {
-    return { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0, width: 0, depth: 0, height: 0 };
+  if (vertexCount === 0) {
+    return { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0, width: 0, depth: 0, height: 0, vertexCount: 0 };
   }
 
   return {
@@ -33,7 +38,8 @@ export function computeBounds(triangles: MeshTriangle[]): MeshBounds {
     maxZ,
     width: Number((maxX - minX).toFixed(3)),
     depth: Number((maxY - minY).toFixed(3)),
-    height: Number((maxZ - minZ).toFixed(3))
+    height: Number((maxZ - minZ).toFixed(3)),
+    vertexCount,
   };
 }
 
