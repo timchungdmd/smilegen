@@ -439,14 +439,14 @@ export const useDesignStore = create<DesignStore>()(
       // ── Cross-store lifecycle ──────────────────────────────────────
 
       applyDesignFromDB: (plan, generatedDesign) => {
-        const firstVariant =
+        const defaultVariant =
           generatedDesign?.variants[1] ?? generatedDesign?.variants[0] ?? null;
         set({
           plan,
           generatedDesign,
           variants: generatedDesign?.variants ?? [],
-          activeVariantId: firstVariant?.id ?? null,
-          trustSummary: trustFromVariant(firstVariant),
+          activeVariantId: defaultVariant?.id ?? null,
+          trustSummary: trustFromVariant(defaultVariant),
           readyForDoctor: false,
           selectedToothId: null,
           _v: nextV(),
