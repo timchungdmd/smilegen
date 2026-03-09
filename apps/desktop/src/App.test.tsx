@@ -103,6 +103,7 @@ beforeEach(() => {
     alignmentMarkers: [],
     cameraDistance: 200,
     activeCollectionId: null,
+    designTab: "3d",
   });
   useImportStore.setState({
     uploadedPhotos: [],

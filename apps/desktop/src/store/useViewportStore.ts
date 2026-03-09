@@ -3,6 +3,7 @@ import { create } from "zustand";
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type ViewId = "import" | "design" | "compare" | "export" | "cases" | "settings";
+export type DesignTab = "3d" | "photo";
 
 export type AlignmentMarkerType = "incisal" | "cusp";
 
@@ -52,6 +53,9 @@ interface ViewportState {
 
   // Active library collection
   activeCollectionId: string | null;
+
+  // Design view tab
+  designTab: DesignTab;
 }
 
 interface ViewportActions {
@@ -74,6 +78,7 @@ interface ViewportActions {
   clearAlignmentMarkers: () => void;
   setCameraDistance: (distance: number) => void;
   setActiveCollectionId: (id: string | null) => void;
+  setDesignTab: (tab: DesignTab) => void;
   resetViewport: () => void;
 }
 
@@ -106,6 +111,8 @@ const INITIAL_VIEWPORT_STATE: ViewportState = {
   cameraDistance: 200,
 
   activeCollectionId: null,
+
+  designTab: "3d",
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -144,6 +151,7 @@ export const useViewportStore = create<ViewportStore>()((set) => ({
 
   setCameraDistance: (distance) => set({ cameraDistance: distance }),
   setActiveCollectionId: (id) => set({ activeCollectionId: id }),
+  setDesignTab: (tab) => set({ designTab: tab }),
 
   resetViewport: () => set(INITIAL_VIEWPORT_STATE),
 }));
