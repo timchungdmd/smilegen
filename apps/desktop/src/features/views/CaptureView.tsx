@@ -11,16 +11,25 @@
  *  - "Continue to Simulate →" CTA once preconditions are met
  */
 
+import { useState } from "react";
 import { useImportStore } from "../../store/useImportStore";
 import { useViewportStore } from "../../store/useViewportStore";
 import { ImportView } from "./ImportView";
+import { AlignmentCalibrationWizard } from "../capture/AlignmentCalibrationWizard";
 
 // ── Stage header ──────────────────────────────────────────────────────────
 
-function CaptureStageHeader() {
+function CaptureStageHeader({
+  showWizard,
+  onToggleWizard,
+}: {
+  showWizard: boolean;
+  onToggleWizard: () => void;
+}) {
   const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
   const archScanName = useImportStore((s) => s.archScanName);
   const setActiveView = useViewportStore((s) => s.setActiveView);
+  const hasPhotos = uploadedPhotos.length > 0;
 
   const photoCount = uploadedPhotos.length;
   const hasScan = Boolean(archScanName);
@@ -78,29 +87,55 @@ function CaptureStageHeader() {
         )}
       </div>
 
-      {isComplete && (
-        <button
-          onClick={() => setActiveView("simulate")}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "6px 14px",
-            background: "var(--accent, #00b4d8)",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          Continue to Simulate
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-        </button>
-      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {/* Alignment wizard toggle — only shown when photos are available */}
+        {hasPhotos && (
+          <button
+            onClick={onToggleWizard}
+            style={{
+              padding: "6px 12px",
+              background: showWizard
+                ? "rgba(0,180,216,0.15)"
+                : "var(--bg-tertiary, #252b38)",
+              color: showWizard ? "var(--accent, #00b4d8)" : "var(--text-muted)",
+              border: "1px solid",
+              borderColor: showWizard
+                ? "var(--accent, #00b4d8)"
+                : "var(--border, #2a2f3b)",
+              borderRadius: 6,
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+            title="Open the 2-point alignment wizard"
+          >
+            {showWizard ? "Hide Alignment" : "Align Photo"}
+          </button>
+        )}
+
+        {isComplete && (
+          <button
+            onClick={() => setActiveView("simulate")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 14px",
+              background: "var(--accent, #00b4d8)",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Continue to Simulate
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -108,6 +143,8 @@ function CaptureStageHeader() {
 // ── CaptureView ───────────────────────────────────────────────────────────
 
 export function CaptureView() {
+  const [showWizard, setShowWizard] = useState(false);
+
   return (
     <div
       style={{
@@ -118,8 +155,41 @@ export function CaptureView() {
         minHeight: 0,
       }}
     >
-      <CaptureStageHeader />
-      <ImportView />
+      <CaptureStageHeader
+        showWizard={showWizard}
+        onToggleWizard={() => setShowWizard((v) => !v)}
+      />
+
+      <div
+        style={{
+          flex: 1,
+          display: "flex",
+          overflow: "hidden",
+          minHeight: 0,
+        }}
+      >
+        {/* Main import panel */}
+        <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
+          <ImportView />
+        </div>
+
+        {/* Alignment wizard side-panel */}
+        {showWizard && (
+          <div
+            style={{
+              width: 360,
+              flexShrink: 0,
+              borderLeft: "1px solid var(--border, #2a2f3b)",
+              overflow: "auto",
+              background: "var(--bg-primary, #111827)",
+            }}
+          >
+            <AlignmentCalibrationWizard
+              onClose={() => setShowWizard(false)}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
