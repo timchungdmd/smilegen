@@ -86,7 +86,7 @@ beforeEach(() => {
 
   // Reset all split stores so each test starts fresh
   useViewportStore.setState({
-    activeView: "import",
+    activeView: "capture",
     showOverlay: false,
     overlayOpacity: 0.7,
     showSmileArc: true,
@@ -125,10 +125,11 @@ afterEach(() => {
 test("renders the dental CAD shell with sidebar navigation", () => {
   render(<App />);
   expect(screen.getByText("SmileGen")).toBeInTheDocument();
-  expect(screen.getAllByText("Import").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getAllByText("Design").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getAllByText("Compare").length).toBeGreaterThanOrEqual(1);
-  expect(screen.getAllByText("Export").length).toBeGreaterThanOrEqual(1);
+  // Workflow-first nav labels (new sidebar)
+  expect(screen.getAllByText("Capture").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("Simulate").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("Plan").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("Validate").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("Cases").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("Settings").length).toBeGreaterThanOrEqual(1);
 });
@@ -171,7 +172,7 @@ test("generates variants from valid imports", async () => {
     useDesignStore.getState().quickGenerate();
   });
 
-  expect(useViewportStore.getState().activeView).toBe("design");
+  expect(useViewportStore.getState().activeView).toBe("simulate");
   expect(useDesignStore.getState().generatedDesign).not.toBeNull();
   expect(useDesignStore.getState().generatedDesign!.variants.length).toBe(3);
   expect(useCaseStore.getState().caseRecord).not.toBeNull();

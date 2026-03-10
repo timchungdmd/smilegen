@@ -529,6 +529,6 @@ function applyGeneration(
     _v: nextV(),
   });
 
-  // Navigate to design view after generation
-  viewportState.setActiveView("design");
+  // Navigate to simulate view after generation
+  viewportState.setActiveView("simulate");
 }

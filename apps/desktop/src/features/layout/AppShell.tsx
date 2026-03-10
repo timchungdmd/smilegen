@@ -6,6 +6,7 @@ import { useDropZone } from "../import/useDropZone";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 import { Workspace } from "./Workspace";
+import { CaseContextBar } from "./CaseContextBar";
 
 export function AppShell() {
   const activeView = useViewportStore((s) => s.activeView);
@@ -56,7 +57,7 @@ export function AppShell() {
       style={{
         display: "grid",
         gridTemplateColumns: "var(--sidebar-width) 1fr",
-        gridTemplateRows: "var(--header-height) 1fr",
+        gridTemplateRows: "var(--header-height) auto 1fr",
         height: "100vh",
         overflow: "hidden",
         position: "relative"
@@ -64,6 +65,8 @@ export function AppShell() {
     >
       <Header />
       <Sidebar activeView={activeView} />
+      {/* CaseContextBar spans both columns, in the auto-height second row */}
+      <CaseContextBar />
       <Workspace activeView={activeView} />
 
       {/* Drag-and-drop overlay */}

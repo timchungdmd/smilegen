@@ -2,7 +2,49 @@ import { create } from "zustand";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type ViewId = "import" | "design" | "compare" | "export" | "cases" | "settings";
+/**
+ * Workflow-first navigation IDs.
+ *
+ * Workflow stages (clinical pipeline):
+ *   cases → overview → capture → simulate → plan → validate → present → collaborate
+ *
+ * Utility views (always accessible):
+ *   settings
+ *
+ * Legacy aliases kept for backward compatibility:
+ *   "import"  → resolves to "capture"
+ *   "design"  → resolves to "simulate"
+ *   "compare" → resolves to "validate"
+ *   "export"  → resolves to "collaborate"
+ */
+export type ViewId =
+  | "cases"
+  | "overview"
+  | "capture"
+  | "simulate"
+  | "plan"
+  | "validate"
+  | "present"
+  | "collaborate"
+  | "settings"
+  // Legacy (deprecated) — kept for backward compat with persisted state
+  | "import"
+  | "design"
+  | "compare"
+  | "export";
+
+/** Maps legacy ViewId values to their modern equivalents */
+export const LEGACY_VIEW_MAP: Partial<Record<ViewId, ViewId>> = {
+  import: "capture",
+  design: "simulate",
+  compare: "validate",
+  export: "collaborate",
+};
+
+/** Normalise a ViewId, resolving any legacy alias to its modern equivalent */
+export function normalizeViewId(id: ViewId): ViewId {
+  return LEGACY_VIEW_MAP[id] ?? id;
+}
 export type DesignTab = "3d" | "photo";
 
 export type AlignmentMarkerType = "incisal" | "cusp";
@@ -91,7 +133,7 @@ export type ViewportStore = ViewportState & ViewportActions;
 // ─── Initial state ────────────────────────────────────────────────────────────
 
 const INITIAL_VIEWPORT_STATE: ViewportState = {
-  activeView: "import",
+  activeView: "capture",
 
   showOverlay: false,
   overlayOpacity: 0.7,
