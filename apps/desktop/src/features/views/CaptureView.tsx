@@ -58,14 +58,23 @@ function CaptureStageHeader({
     setDetecting(true);
     setDetectError(null);
     try {
-      // Fetch Blob from the object URL created at upload time
-      const imageBlob = await fetch(photo.url).then((r) => r.blob());
+      // Fetch Blob from the object URL created at upload time.
+      // Wrapped separately to provide a user-readable message if the blob URL is stale.
+      let imageBlob: Blob;
+      try {
+        imageBlob = await fetch(photo.url).then((r) => r.blob());
+      } catch {
+        throw new Error(
+          "Could not read the uploaded photo. Please re-upload and try again."
+        );
+      }
 
-      // Call vision service — both calls use the same blob
+      // Call vision service — both calls must succeed before any store writes
       const result = await detectLandmarks(imageBlob);
       const maskBlob = await getMouthMask(imageBlob);
 
-      // Write landmark results to viewport store (normalized 0–1 → percent 0–100)
+      // Write landmark results to viewport store (normalized 0–1 → percent 0–100).
+      // All store writes happen after both API calls succeed (atomic commit).
       setMidlineX(result.midlineX * 100);
       setSmileArcY(result.smileArcY * 100);
       setGingivalLineY(result.gingivalLineY * 100);
