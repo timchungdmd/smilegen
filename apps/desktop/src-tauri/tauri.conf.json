@@ -1,0 +1,23 @@
+{
+  "productName": "SmileGen",
+  "version": "0.1.0",
+  "identifier": "com.smilegen.desktop",
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{
+      "title": "SmileGen",
+      "width": 1280,
+      "height": 800,
+      "minWidth": 1024,
+      "minHeight": 680
+    }]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "msi"],
+    "externalBin": ["binaries/vision-server", "binaries/mesh-server"]
+  }
+}

@@ -1,7 +1,7 @@
 export type AdditiveBias = "conservative" | "balanced" | "enhanced";
 export type WorkingRange = "premolar_to_premolar";
 export type SymmetryMode = "soft" | "strict";
-export type TreatmentType = "veneer" | "crown";
+export type TreatmentType = "veneer" | "crown" | "implant";
 
 /**
  * Tooth width proportion mode.
