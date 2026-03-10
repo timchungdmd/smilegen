@@ -42,6 +42,7 @@ export function PhotoOverlay({
   const setSmileArcY = useViewportStore((s) => s.setSmileArcY);
   const setGingivalLineY = useViewportStore((s) => s.setGingivalLineY);
   const archScanMesh = useImportStore((s) => s.archScanMesh);
+  const mouthMaskUrl = useImportStore((s) => s.mouthMaskUrl);
   const archDepthOverride = useDesignStore((s) => s.archDepthOverride);
   const archHalfWidthOverride = useDesignStore((s) => s.archHalfWidthOverride);
   const cameraDistance = useViewportStore((s) => s.cameraDistance);
@@ -379,7 +380,18 @@ export function PhotoOverlay({
             height: "100%",
             objectFit: "contain",
             display: "block",
-            userSelect: "none"
+            userSelect: "none",
+            // Apply mouth mask when available — isolates smile zone in SimulateView overlay
+            ...(mouthMaskUrl
+              ? {
+                  maskImage: `url(${mouthMaskUrl})`,
+                  maskSize: "100% 100%",
+                  maskRepeat: "no-repeat",
+                  WebkitMaskImage: `url(${mouthMaskUrl})`,
+                  WebkitMaskSize: "100% 100%",
+                  WebkitMaskRepeat: "no-repeat",
+                }
+              : {}),
           }}
         />
 
