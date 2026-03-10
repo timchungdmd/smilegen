@@ -56,6 +56,9 @@ interface ViewportState {
 
   // Design view tab
   designTab: DesignTab;
+
+  // Gimbal transform mode for 3D tooth manipulation
+  gimbalMode: "translate" | "rotate" | "scale";
 }
 
 interface ViewportActions {
@@ -79,6 +82,7 @@ interface ViewportActions {
   setCameraDistance: (distance: number) => void;
   setActiveCollectionId: (id: string | null) => void;
   setDesignTab: (tab: DesignTab) => void;
+  setGimbalMode: (mode: "translate" | "rotate" | "scale") => void;
   resetViewport: () => void;
 }
 
@@ -113,6 +117,7 @@ const INITIAL_VIEWPORT_STATE: ViewportState = {
   activeCollectionId: null,
 
   designTab: "3d",
+  gimbalMode: "translate",
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -152,6 +157,7 @@ export const useViewportStore = create<ViewportStore>()((set) => ({
   setCameraDistance: (distance) => set({ cameraDistance: distance }),
   setActiveCollectionId: (id) => set({ activeCollectionId: id }),
   setDesignTab: (tab) => set({ designTab: tab }),
+  setGimbalMode: (mode) => set({ gimbalMode: mode }),
 
   resetViewport: () => set(INITIAL_VIEWPORT_STATE),
 }));

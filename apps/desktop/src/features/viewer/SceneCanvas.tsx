@@ -8,6 +8,8 @@ import { detectCollisions } from "../geometry/collisionDetector";
 import { useDesignStore } from "../../store/useDesignStore";
 import { createToothMaterial } from "./materials/toothMaterial";
 import { DentalLighting } from "./DentalLighting";
+import { GimbalTooth } from "./GimbalTooth";
+import { useViewportStore } from "../../store/useViewportStore";
 
 interface SceneCanvasProps {
   archScanMesh?: ParsedStlMesh | null;
@@ -191,12 +193,15 @@ function ToothMesh({
   tooth,
   selected,
   hasCollision,
-  onSelect
+  onSelect,
+  suppressPosition = false,
 }: {
   tooth: GeneratedVariantDesign["teeth"][number];
   selected: boolean;
   hasCollision: boolean;
   onSelect: () => void;
+  /** When true, renders at local origin [0,0,0] — parent GimbalTooth group handles positioning. */
+  suppressPosition?: boolean;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
 
@@ -269,8 +274,8 @@ function ToothMesh({
     <mesh
       ref={meshRef}
       geometry={geometry}
-      position={useRealMesh ? [0, 0, 0] : [tooth.positionX, tooth.positionY, posZ]}
-      rotation={useRealMesh ? [0, 0, 0] : [0, archAngle, 0]}
+      position={suppressPosition || useRealMesh ? [0, 0, 0] : [tooth.positionX, tooth.positionY, posZ]}
+      rotation={suppressPosition || useRealMesh ? [0, 0, 0] : [0, archAngle, 0]}
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
@@ -380,6 +385,8 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
   const hasContent = Boolean(archScanMesh) || Boolean(activeVariant?.teeth.length);
   const archDepthOverride = useDesignStore((s) => s.archDepthOverride);
   const archHalfWidthOverride = useDesignStore((s) => s.archHalfWidthOverride);
+  const moveTooth = useDesignStore((s) => s.moveTooth);
+  const gimbalMode = useViewportStore((s) => s.gimbalMode);
 
   const [animTarget, setAnimTarget] = useState<{
     pos: THREE.Vector3;
@@ -467,13 +474,23 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
         )}
 
         {activeVariant?.teeth.map((tooth) => (
-          <ToothMesh
+          <GimbalTooth
             key={tooth.toothId}
             tooth={tooth}
-            selected={tooth.toothId === selectedToothId}
-            hasCollision={collisionToothIds.has(tooth.toothId)}
-            onSelect={() => onSelectTooth?.(tooth.toothId)}
-          />
+            isSelected={tooth.toothId === selectedToothId}
+            gimbalMode={gimbalMode}
+            onTransformEnd={(id, dx, dy) =>
+              moveTooth(id, { deltaX: dx, deltaY: dy })
+            }
+          >
+            <ToothMesh
+              tooth={tooth}
+              selected={tooth.toothId === selectedToothId}
+              hasCollision={collisionToothIds.has(tooth.toothId)}
+              onSelect={() => onSelectTooth?.(tooth.toothId)}
+              suppressPosition
+            />
+          </GimbalTooth>
         ))}
 
         {activeVariant && (

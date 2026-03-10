@@ -14,6 +14,8 @@ import { BUNDLED_COLLECTIONS } from "../library/bundledLibrary";
 export function DesignToolbar() {
   const designTab = useViewportStore((s) => s.designTab);
   const setDesignTab = useViewportStore((s) => s.setDesignTab);
+  const gimbalMode = useViewportStore((s) => s.gimbalMode);
+  const setGimbalMode = useViewportStore((s) => s.setGimbalMode);
   const activeCollectionId = useViewportStore((s) => s.activeCollectionId);
   const setActiveCollectionId = useViewportStore((s) => s.setActiveCollectionId);
   const showOverlay = useViewportStore((s) => s.showOverlay);
@@ -110,6 +112,34 @@ export function DesignToolbar() {
                   onClick={() => selectVariant(v.id)}
                 >
                   {v.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Gimbal mode buttons — visible in 3D tab when design exists */}
+          {generatedDesign && designTab === "3d" && (
+            <div style={{ display: "flex", gap: 4 }} role="group" aria-label="Transform mode">
+              {(["translate", "rotate", "scale"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  aria-label={`Gimbal: ${mode}`}
+                  aria-pressed={gimbalMode === mode}
+                  title={`${mode[0].toUpperCase()} — ${mode}`}
+                  onClick={() => setGimbalMode(mode)}
+                  style={{
+                    background: gimbalMode === mode ? "var(--accent)" : "var(--surface-2)",
+                    border: "none",
+                    borderRadius: 4,
+                    padding: "4px 10px",
+                    cursor: "pointer",
+                    color: gimbalMode === mode ? "#fff" : "var(--text-primary)",
+                    fontSize: 11,
+                    textTransform: "capitalize",
+                    fontWeight: gimbalMode === mode ? 600 : 400,
+                  }}
+                >
+                  {mode[0].toUpperCase()}
                 </button>
               ))}
             </div>
