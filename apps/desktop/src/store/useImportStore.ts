@@ -20,6 +20,7 @@ interface ImportState {
   archScanName: string | undefined;
   uploadedToothModels: UploadedToothModel[];
   importError: string | null;
+  mouthMaskUrl: string | null;
 }
 
 interface ImportActions {
@@ -31,6 +32,7 @@ interface ImportActions {
   clearArchScan: () => void;
   removeToothModel: (toothId: string) => void;
   clearToothModels: () => void;
+  setMouthMaskUrl: (url: string | null) => void;
   clearAll: () => void;
 }
 
@@ -51,6 +53,7 @@ export const useImportStore = create<ImportStore>((set, get) => ({
   archScanName: undefined,
   uploadedToothModels: [],
   importError: null,
+  mouthMaskUrl: null,
 
   handlePhotosSelected: (files) => {
     const { uploadedPhotos } = get();
@@ -132,14 +135,19 @@ export const useImportStore = create<ImportStore>((set, get) => ({
 
   clearToothModels: () => set({ uploadedToothModels: [], importError: null }),
 
+  setMouthMaskUrl: (url) => set({ mouthMaskUrl: url }),
+
   clearAll: () => {
-    get().uploadedPhotos.forEach((p) => URL.revokeObjectURL(p.url));
+    const { uploadedPhotos, mouthMaskUrl } = get();
+    uploadedPhotos.forEach((p) => URL.revokeObjectURL(p.url));
+    if (mouthMaskUrl) URL.revokeObjectURL(mouthMaskUrl);
     set({
       uploadedPhotos: [],
       archScanMesh: null,
       archScanName: undefined,
       uploadedToothModels: [],
       importError: null,
+      mouthMaskUrl: null,
     });
   },
 }));
