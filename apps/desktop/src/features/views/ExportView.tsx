@@ -6,6 +6,8 @@ import { canMarkReadyForDoctor } from "../handoff/handoffStore";
 import { exportVariant, type ExportFormat } from "../export/exportService";
 import { openReportForPrint } from "../export/reportGenerator";
 import { packageCase, downloadPackagedCase } from "../collaboration/casePackager";
+import { serializeToBinaryStl } from "../export/binaryStl";
+import { synthesizeCrown, synthesizeVeneer } from "../../services/meshSynthesisClient";
 
 export function ExportView() {
   const activeVariant = useDesignStore(selectActiveVariant);
@@ -32,7 +34,47 @@ export function ExportView() {
   const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
   const uploadedToothModels = useImportStore((s) => s.uploadedToothModels);
   const archScanName = useImportStore((s) => s.archScanName);
+  const archScanMesh = useImportStore((s) => s.archScanMesh);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("stl_binary");
+  const [synthesisBusy, setSynthesisBusy] = useState<"crown" | "veneer" | null>(null);
+
+  async function handleExportCrown() {
+    if (!activeVariant || !archScanMesh) return;
+    setSynthesisBusy("crown");
+    try {
+      const allTriangles = activeVariant.teeth.flatMap((t) => t.previewTriangles);
+      const libraryStl = new Blob([serializeToBinaryStl("library", allTriangles)]);
+      const targetStl = new Blob([serializeToBinaryStl("target", archScanMesh.triangles)]);
+      const ply = await synthesizeCrown(libraryStl, targetStl, { x: 0, y: 0, z: 0 }, 3.5);
+      const url = URL.createObjectURL(ply);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "crown.ply";
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setSynthesisBusy(null);
+    }
+  }
+
+  async function handleExportVeneer() {
+    if (!activeVariant || !archScanMesh) return;
+    setSynthesisBusy("veneer");
+    try {
+      const allTriangles = activeVariant.teeth.flatMap((t) => t.previewTriangles);
+      const libraryStl = new Blob([serializeToBinaryStl("library", allTriangles)]);
+      const targetStl = new Blob([serializeToBinaryStl("target", archScanMesh.triangles)]);
+      const ply = await synthesizeVeneer(libraryStl, targetStl, 0.3);
+      const url = URL.createObjectURL(ply);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "veneer.ply";
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setSynthesisBusy(null);
+    }
+  }
 
   if (!generatedDesign) {
     return (
@@ -199,6 +241,38 @@ export function ExportView() {
               }}
             >
               Export .smilegen Package
+            </button>
+          </div>
+        </div>
+
+        {/* Mesh Synthesis */}
+        <div className="panel">
+          <div className="panel-header">
+            <h3>Mesh Synthesis</h3>
+          </div>
+          <div className="panel-body" style={{ display: "grid", gap: 10 }}>
+            <p style={{ fontSize: 12, color: "var(--text-secondary)", margin: 0 }}>
+              Generate printable crown or veneer meshes via the mesh synthesis service.
+              Requires an arch scan to be uploaded.
+            </p>
+            {!archScanMesh && (
+              <div style={{ fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>
+                Upload an arch scan in the Import tab to enable synthesis.
+              </div>
+            )}
+            <button
+              className="btn btn-sm"
+              onClick={handleExportCrown}
+              disabled={!activeVariant || !archScanMesh || synthesisBusy !== null}
+            >
+              {synthesisBusy === "crown" ? "Synthesizing…" : "Export Crown PLY"}
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={handleExportVeneer}
+              disabled={!activeVariant || !archScanMesh || synthesisBusy !== null}
+            >
+              {synthesisBusy === "veneer" ? "Synthesizing…" : "Export Veneer PLY"}
             </button>
           </div>
         </div>
