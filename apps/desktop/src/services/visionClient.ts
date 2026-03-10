@@ -3,6 +3,15 @@
 const VISION_API_URL =
   import.meta.env.VITE_VISION_API_URL ?? "http://localhost:8003";
 
+interface RawLandmarkResponse {
+  midlineX: number;
+  lipContour: {
+    outer: { x: number; y: number; z?: number }[];
+    inner: { x: number; y: number; z?: number }[];
+  };
+  mouthMaskBbox: { xMin: number; yMin: number; xMax: number; yMax: number };
+}
+
 export interface VisionLandmarkResult {
   /** Normalized facial midline X (0–1). Multiply × 100 for viewport store. */
   midlineX: number;
@@ -64,14 +73,18 @@ export async function detectLandmarks(
     );
   }
 
-  const data = await res.json();
+  const data = (await res.json()) as RawLandmarkResponse;
 
   // outer lip contour: 22 points built from UPPER_LIP_OUTER + reversed LOWER_LIP_OUTER
   // outer[0]  = lm[61]  = left commissure
   // outer[5]  = lm[0]   = philtrum center / upper lip top (smile arc reference)
   // outer[10] = lm[291] = right commissure
-  const outer: { x: number; y: number; z?: number }[] = data.lipContour.outer;
-  const inner: { x: number; y: number; z?: number }[] = data.lipContour.inner;
+  const outer = data.lipContour.outer;
+  const inner = data.lipContour.inner;
+
+  if (!Array.isArray(outer) || outer.length < 11 || !Array.isArray(inner)) {
+    throw new Error("Vision service returned an unexpected landmark format.");
+  }
 
   const smileArcY = outer[5].y;
 

@@ -92,8 +92,17 @@ describe("getMouthMask", () => {
     expect(result).toBe(pngBlob);
   });
 
-  it("throws on HTTP error response", async () => {
-    mockFetch.mockResolvedValueOnce({ ok: false, status: 422 });
-    await expect(getMouthMask(new Blob(["x"]))).rejects.toThrow();
+  it("throws a user-readable message on HTTP error", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 500 });
+    await expect(getMouthMask(new Blob(["x"]))).rejects.toThrow(
+      "Mouth mask generation failed"
+    );
+  });
+
+  it("throws a user-readable message on network failure", async () => {
+    mockFetch.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await expect(getMouthMask(new Blob(["x"]))).rejects.toThrow(
+      "Vision service unavailable"
+    );
   });
 });
