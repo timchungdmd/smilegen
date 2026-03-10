@@ -2,6 +2,9 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
 
+const VISION_HEALTH_URL: &str = "http://localhost:8003/health";
+const MESH_HEALTH_URL: &str = "http://localhost:8002/health";
+
 /// Holds spawned-sidecar tracking info.
 /// Stored in AppState so it can be accessed for cleanup.
 pub struct AppState {
@@ -15,49 +18,63 @@ pub struct ManagedAppState(pub Mutex<AppState>);
 /// Spawns both Python sidecars and starts a background health-check loop.
 /// Emits "sidecars-ready" when both services answer /health,
 /// or "sidecars-unavailable" after 10 × 500 ms attempts.
-pub fn start_sidecars(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+/// If spawning fails, emits "sidecars-unavailable" immediately so the
+/// frontend can degrade gracefully rather than crashing the app.
+pub fn start_sidecars(app: &AppHandle) {
     let shell = app.shell();
 
-    // spawn() returns (Receiver<CommandEvent>, CommandChild).
-    // We discard both — the processes continue running independently.
-    // The OS will clean them up when the parent process exits.
-    let (_rx, _child) = shell.sidecar("vision-server")?.spawn()?;
-    let (_rx2, _child2) = shell.sidecar("mesh-server")?.spawn()?;
+    let spawn_result = (|| -> Result<(), Box<dyn std::error::Error>> {
+        let (_vision_rx, _vision_child) = shell.sidecar("vision-server")?.spawn()?;
+        let (_mesh_rx, _mesh_child) = shell.sidecar("mesh-server")?.spawn()?;
 
-    // Mark as spawned in AppState
-    let state = app.state::<ManagedAppState>();
-    let mut guard = state.0.lock().unwrap();
-    guard.vision_spawned = true;
-    guard.mesh_spawned = true;
-    drop(guard);
+        let state = app.state::<ManagedAppState>();
+        let mut guard = state.0.lock().unwrap_or_else(|p| p.into_inner());
+        guard.vision_spawned = true;
+        guard.mesh_spawned = true;
+
+        Ok(())
+    })();
+
+    if spawn_result.is_err() {
+        let _ = app.emit("sidecars-unavailable", ());
+        return;
+    }
 
     // Start health-check loop in background
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         poll_until_healthy(app_handle).await;
     });
-
-    Ok(())
 }
 
-/// Polls /health on both services up to 10 times with 500 ms intervals.
+/// Polls /health on both services concurrently up to 10 times with 500 ms intervals.
 /// Emits "sidecars-ready" on success, "sidecars-unavailable" on timeout.
 async fn poll_until_healthy(app: AppHandle) {
     let client = reqwest::Client::new();
     for _ in 0..10 {
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-        let vision_ok = client
-            .get("http://localhost:8003/health")
-            .send()
-            .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false);
-        let mesh_ok = client
-            .get("http://localhost:8002/health")
-            .send()
-            .await
-            .map(|r| r.status().is_success())
-            .unwrap_or(false);
+
+        let vision_fut = async {
+            client
+                .get(VISION_HEALTH_URL)
+                .timeout(std::time::Duration::from_millis(400))
+                .send()
+                .await
+                .map(|r| r.status().is_success())
+                .unwrap_or(false)
+        };
+
+        let mesh_fut = async {
+            client
+                .get(MESH_HEALTH_URL)
+                .timeout(std::time::Duration::from_millis(400))
+                .send()
+                .await
+                .map(|r| r.status().is_success())
+                .unwrap_or(false)
+        };
+
+        let (vision_ok, mesh_ok) = tokio::join!(vision_fut, mesh_fut);
         if vision_ok && mesh_ok {
             let _ = app.emit("sidecars-ready", ());
             return;

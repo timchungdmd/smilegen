@@ -11,7 +11,7 @@ fn main() {
             mesh_spawned: false,
         })))
         .setup(|app| {
-            commands::start_sidecars(&app.handle())?;
+            commands::start_sidecars(&app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![commands::generate_variants])

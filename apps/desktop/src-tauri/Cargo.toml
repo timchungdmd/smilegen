@@ -8,4 +8,5 @@ tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["time"] }
+# Reserved for structured event payloads — emit () currently but may carry data in future
 serde = { version = "1", features = ["derive"] }
