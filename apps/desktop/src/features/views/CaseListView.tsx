@@ -1,24 +1,90 @@
 import { useEffect, useState, useCallback } from "react";
 import { listCases, deleteCase, type SavedCaseSummary } from "../../services/caseDb";
 import { useCaseStore } from "../../store/useCaseStore";
+import { useViewportStore } from "../../store/useViewportStore";
 
-function workflowBadgeClass(state: string): string {
-  switch (state) {
+// ── Stage progress mapping ────────────────────────────────────────────────────
+
+const CLINICAL_STAGES = [
+  { id: "capture", label: "Capture" },
+  { id: "simulate", label: "Simulate" },
+  { id: "plan", label: "Plan" },
+  { id: "validate", label: "Validate" },
+  { id: "present", label: "Present" },
+  { id: "collaborate", label: "Collaborate" },
+] as const;
+
+/** Maps legacy workflowState values to how many pipeline stages are complete */
+function stagesComplete(workflowState: string): number {
+  switch (workflowState) {
     case "draft":
-      return "badge badge-warning";
+      return 0;
     case "imported":
+      return 1; // Capture done
     case "mapped":
-      return "badge badge-info";
+      return 2; // Simulate done
     case "prepared":
+      return 3; // Plan done
     case "needs_doctor_review":
-      return "badge badge-success";
+      return 3; // Validate in progress (plan still last full stage)
     case "doctor_approved":
+      return 4; // Validate done
     case "exported":
-      return "badge badge-success";
+      return 6; // All done
     default:
-      return "badge badge-info";
+      return 0;
   }
 }
+
+/** Human-readable label for legacy workflowState */
+function stageLabel(workflowState: string): string {
+  switch (workflowState) {
+    case "draft":
+      return "Started";
+    case "imported":
+      return "Assets imported";
+    case "mapped":
+      return "Design generated";
+    case "prepared":
+      return "Treatment planned";
+    case "needs_doctor_review":
+      return "Awaiting review";
+    case "doctor_approved":
+      return "Doctor approved";
+    case "exported":
+      return "Delivered";
+    default:
+      return workflowState;
+  }
+}
+
+/** Badge colour for a workflowState */
+function stageBadgeStyle(workflowState: string): React.CSSProperties {
+  const color =
+    workflowState === "doctor_approved" || workflowState === "exported"
+      ? "#34d399"
+      : workflowState === "needs_doctor_review"
+      ? "#fbbf24"
+      : workflowState === "draft"
+      ? "#8892a0"
+      : "#60a5fa";
+
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "2px 8px",
+    borderRadius: 10,
+    fontSize: 10,
+    fontWeight: 600,
+    letterSpacing: "0.04em",
+    background: `${color}1a`,
+    color,
+    border: `1px solid ${color}40`,
+    whiteSpace: "nowrap" as const,
+  };
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string): string {
   try {
@@ -32,11 +98,77 @@ function formatDate(iso: string): string {
   }
 }
 
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function StagePipeline({ workflowState }: { workflowState: string }) {
+  const done = stagesComplete(workflowState);
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        marginTop: 10,
+        marginBottom: 2,
+      }}
+    >
+      {CLINICAL_STAGES.map((stage, i) => {
+        const isComplete = i < done;
+        const isCurrent = i === done && workflowState !== "exported";
+        return (
+          <div
+            key={stage.id}
+            title={stage.label}
+            style={{
+              flex: 1,
+              height: 4,
+              borderRadius: 2,
+              background: isComplete
+                ? "#00b4d8"
+                : isCurrent
+                ? "rgba(0,180,216,0.25)"
+                : "var(--border, #2a2f3b)",
+              transition: "background 0.2s",
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function StageLabels({ workflowState }: { workflowState: string }) {
+  const done = stagesComplete(workflowState);
+  const current = CLINICAL_STAGES[done];
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        fontSize: 9,
+        color: "var(--text-muted, #8892a0)",
+        marginTop: 2,
+      }}
+    >
+      <span>{CLINICAL_STAGES[0].label}</span>
+      {current && done < CLINICAL_STAGES.length && (
+        <span style={{ color: "var(--accent, #00b4d8)" }}>
+          {current.label} →
+        </span>
+      )}
+      <span>{CLINICAL_STAGES[CLINICAL_STAGES.length - 1].label}</span>
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export function CaseListView() {
   const [cases, setCases] = useState<SavedCaseSummary[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
 
   const refreshCases = useCallback(async () => {
     setLoading(true);
@@ -56,8 +188,19 @@ export function CaseListView() {
     useCaseStore.getState().newCase();
   };
 
-  const handleLoadCase = async (id: string) => {
-    await useCaseStore.getState().loadCaseFromDB(id);
+  /**
+   * Load the case then always land on Overview — the clinical workflow hub.
+   * loadCaseFromDB navigates based on design state; we override to overview
+   * so the user sees the full stage progress map before diving into a step.
+   */
+  const handleOpenCase = async (id: string) => {
+    setOpeningId(id);
+    try {
+      await useCaseStore.getState().loadCaseFromDB(id);
+      useViewportStore.getState().setActiveView("overview");
+    } finally {
+      setOpeningId(null);
+    }
   };
 
   const handleDeleteCase = async (id: string) => {
@@ -73,47 +216,123 @@ export function CaseListView() {
     : cases;
 
   return (
-    <div style={{ padding: 24, maxWidth: 960, margin: "0 auto", overflow: "auto", height: "100%" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Cases</h2>
-        <button className="btn btn-primary" onClick={handleNewCase}>
-          + New Case
+    <div
+      style={{
+        padding: 24,
+        maxWidth: 960,
+        margin: "0 auto",
+        overflow: "auto",
+        height: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      {/* ── Header ── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 20,
+        }}
+      >
+        <div>
+          <h2
+            style={{
+              fontSize: 20,
+              fontWeight: 700,
+              color: "var(--text-primary, #e8eaf0)",
+              margin: 0,
+            }}
+          >
+            Cases
+          </h2>
+          <p
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted, #8892a0)",
+              margin: "4px 0 0",
+            }}
+          >
+            {cases.length > 0
+              ? `${cases.length} case${cases.length === 1 ? "" : "s"}`
+              : "Start your first smile design"}
+          </p>
+        </div>
+        <button
+          className="btn btn-primary"
+          onClick={handleNewCase}
+          style={{ display: "flex", alignItems: "center", gap: 6 }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 11h-6V5h-2v6H5v2h6v6h2v-6h6z" />
+          </svg>
+          New Case
         </button>
       </div>
 
-      {/* Search */}
-      <div style={{ marginBottom: 16 }}>
+      {/* ── Search ── */}
+      <div style={{ marginBottom: 20 }}>
         <input
           className="input"
           type="text"
-          placeholder="Search cases by title..."
+          placeholder="Search cases by name…"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          style={{ width: "100%", padding: "8px 12px" }}
+          style={{ width: "100%", padding: "8px 12px", boxSizing: "border-box" }}
         />
       </div>
 
-      {/* Loading state */}
+      {/* ── Loading ── */}
       {loading && (
-        <div style={{ textAlign: "center", padding: 40, color: "var(--text-secondary)" }}>
-          Loading cases...
+        <div
+          style={{
+            textAlign: "center",
+            padding: 48,
+            color: "var(--text-muted, #8892a0)",
+          }}
+        >
+          Loading cases…
         </div>
       )}
 
-      {/* Empty state */}
+      {/* ── Empty state ── */}
       {!loading && cases.length === 0 && (
         <div
           className="card"
-          style={{
-            textAlign: "center",
-            padding: 40,
-            color: "var(--text-secondary)",
-          }}
+          style={{ textAlign: "center", padding: 48 }}
         >
-          <div style={{ fontSize: 14, marginBottom: 8 }}>No saved cases yet</div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 16 }}>
-            Create a new case to get started with your smile design workflow.
+          <svg
+            width="40"
+            height="40"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--text-muted, #8892a0)"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{ display: "block", margin: "0 auto 16px" }}
+          >
+            <path d="M9 12h.01M15 12h.01M12 17c2.5 0 4-1 4-3H8c0 2 1.5 3 4 3z" />
+            <circle cx="12" cy="12" r="10" />
+          </svg>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: "var(--text-primary, #e8eaf0)",
+              marginBottom: 6,
+            }}
+          >
+            No cases yet
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--text-muted, #8892a0)",
+              marginBottom: 20,
+            }}
+          >
+            Create your first case to start the smile design workflow.
           </div>
           <button className="btn btn-primary" onClick={handleNewCase}>
             + New Case
@@ -121,21 +340,21 @@ export function CaseListView() {
         </div>
       )}
 
-      {/* No results for search */}
+      {/* ── No search results ── */}
       {!loading && cases.length > 0 && filteredCases.length === 0 && (
         <div
           className="card"
           style={{
             textAlign: "center",
             padding: 24,
-            color: "var(--text-secondary)",
+            color: "var(--text-muted, #8892a0)",
           }}
         >
           No cases match &quot;{searchQuery}&quot;
         </div>
       )}
 
-      {/* Case grid */}
+      {/* ── Case grid ── */}
       {!loading && filteredCases.length > 0 && (
         <div
           style={{
@@ -148,31 +367,91 @@ export function CaseListView() {
             <div
               key={caseItem.id}
               className="card"
-              style={{ cursor: "pointer", position: "relative" }}
-              onClick={() => handleLoadCase(caseItem.id)}
+              style={{
+                cursor: "default",
+                position: "relative",
+                display: "flex",
+                flexDirection: "column",
+              }}
             >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {/* Title + badge */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  marginBottom: 4,
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 14,
+                    fontWeight: 600,
+                    flex: 1,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    color: "var(--text-primary, #e8eaf0)",
+                  }}
+                >
                   {caseItem.title}
                 </div>
-                <span className={workflowBadgeClass(caseItem.workflowState)}>
-                  {caseItem.workflowState}
+                <span style={stageBadgeStyle(caseItem.workflowState)}>
+                  {stageLabel(caseItem.workflowState)}
                 </span>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--text-muted)" }}>
+              {/* Pipeline progress */}
+              <StagePipeline workflowState={caseItem.workflowState} />
+              <StageLabels workflowState={caseItem.workflowState} />
+
+              {/* Dates */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: 11,
+                  color: "var(--text-muted, #8892a0)",
+                  marginTop: 10,
+                }}
+              >
                 <span>Created {formatDate(caseItem.createdAt)}</span>
                 <span>Updated {formatDate(caseItem.updatedAt)}</span>
               </div>
 
-              {/* Delete button */}
-              <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+              {/* Actions */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  marginTop: 12,
+                  gap: 8,
+                }}
+              >
+                <button
+                  className="btn btn-primary"
+                  style={{ flex: 1, fontSize: 12 }}
+                  disabled={openingId === caseItem.id}
+                  onClick={() => handleOpenCase(caseItem.id)}
+                >
+                  {openingId === caseItem.id ? "Opening…" : "Open →"}
+                </button>
+
                 {deleteConfirmId === caseItem.id ? (
                   <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <span style={{ fontSize: 11, color: "var(--danger)" }}>Delete?</span>
+                    <span
+                      style={{ fontSize: 11, color: "var(--danger, #f87171)" }}
+                    >
+                      Delete?
+                    </span>
                     <button
                       className="btn btn-sm"
-                      style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+                      style={{
+                        borderColor: "var(--danger, #f87171)",
+                        color: "var(--danger, #f87171)",
+                      }}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleDeleteCase(caseItem.id);
