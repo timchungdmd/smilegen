@@ -21,6 +21,7 @@ import { useDesignStore } from "../../store/useDesignStore";
 import { useViewportStore } from "../../store/useViewportStore";
 import { StageBlockerScreen } from "../workflow/StageBlockerScreen";
 import { DesignView } from "./DesignView";
+import { MarginLineEditor } from "../plan/MarginLineEditor";
 
 // ── Substep types ─────────────────────────────────────────────────────────
 
@@ -291,6 +292,101 @@ function StructureSubstep() {
   );
 }
 
+// ── Design Substep (3D viewer + crown margin editors) ─────────────────────
+
+function DesignSubstep() {
+  const plan = useDesignStore((s) => s.plan);
+  const archScanMesh = useImportStore((s) => s.archScanMesh);
+  const uploadedToothModels = useImportStore((s) => s.uploadedToothModels);
+
+  // Teeth that need crown synthesis: those with treatment type "crown" and a
+  // matching library tooth model uploaded by the user.
+  const crownTeeth = plan.selectedTeeth.filter(
+    (toothId) => plan.treatmentMap[toothId] === "crown"
+  );
+
+  const crownTeethWithLibrary = crownTeeth.filter((toothId) =>
+    uploadedToothModels.some((m) => m.toothId === toothId)
+  );
+
+  return (
+    <div
+      style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        minHeight: 0,
+      }}
+    >
+      {/* 3D DesignView fills the top half */}
+      <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+        <DesignView />
+      </div>
+
+      {/* Crown margin editors appear below the 3D view when applicable */}
+      {crownTeethWithLibrary.length > 0 && archScanMesh && (
+        <div
+          style={{
+            flexShrink: 0,
+            maxHeight: 320,
+            overflowY: "auto",
+            borderTop: "1px solid var(--border, #2a2f3b)",
+            padding: "12px 16px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--text-muted, #8892a0)",
+              marginBottom: 4,
+            }}
+          >
+            Crown Margin Setup
+          </div>
+          {crownTeethWithLibrary.map((toothId) => {
+            const libraryEntry = uploadedToothModels.find(
+              (m) => m.toothId === toothId
+            )!;
+            return (
+              <MarginLineEditor
+                key={toothId}
+                toothId={toothId}
+                libraryMesh={libraryEntry.mesh}
+                targetMesh={archScanMesh}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {/* Hint when crown teeth exist but no library models uploaded */}
+      {crownTeeth.length > 0 && crownTeethWithLibrary.length === 0 && (
+        <div
+          style={{
+            flexShrink: 0,
+            padding: "10px 16px",
+            borderTop: "1px solid var(--border, #2a2f3b)",
+            fontSize: 11,
+            color: "var(--text-muted, #8892a0)",
+            background: "var(--bg-secondary, #1a1f2b)",
+          }}
+        >
+          Tooth{crownTeeth.length > 1 ? "s" : ""} #{crownTeeth.join(", #")}{" "}
+          {crownTeeth.length > 1 ? "are" : "is"} marked as crown. Upload
+          library tooth models in Capture to enable crown synthesis.
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── PlanView ──────────────────────────────────────────────────────────────
 
 export function PlanView() {
@@ -386,7 +482,7 @@ export function PlanView() {
       >
         {activeSubstep === "stack" && <StackSubstep />}
         {activeSubstep === "structure" && <StructureSubstep />}
-        {activeSubstep === "design" && <DesignView />}
+        {activeSubstep === "design" && <DesignSubstep />}
       </div>
     </div>
   );
