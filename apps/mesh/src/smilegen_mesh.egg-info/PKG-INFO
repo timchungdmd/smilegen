@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: smilegen-mesh
+Version: 0.1.0
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.111
+Requires-Dist: uvicorn[standard]>=0.29
+Requires-Dist: trimesh>=4.3
+Requires-Dist: numpy>=1.26
+Requires-Dist: scipy>=1.13
+Requires-Dist: httpx>=0.27
+Requires-Dist: python-multipart>=0.0.9
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: anyio>=4; extra == "dev"
+Requires-Dist: pytest-anyio>=0.0.0; extra == "dev"

@@ -1,0 +1,10 @@
+pyproject.toml
+src/__init__.py
+src/main.py
+src/routers/__init__.py
+src/services/__init__.py
+src/smilegen_mesh.egg-info/PKG-INFO
+src/smilegen_mesh.egg-info/SOURCES.txt
+src/smilegen_mesh.egg-info/dependency_links.txt
+src/smilegen_mesh.egg-info/requires.txt
+src/smilegen_mesh.egg-info/top_level.txt
