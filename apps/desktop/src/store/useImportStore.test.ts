@@ -4,6 +4,10 @@ beforeEach(() => {
   useImportStore.getState().clearAll();
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 test("mouthMaskUrl is null initially", () => {
   expect(useImportStore.getState().mouthMaskUrl).toBeNull();
 });

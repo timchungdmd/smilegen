@@ -135,7 +135,11 @@ export const useImportStore = create<ImportStore>((set, get) => ({
 
   clearToothModels: () => set({ uploadedToothModels: [], importError: null }),
 
-  setMouthMaskUrl: (url) => set({ mouthMaskUrl: url }),
+  setMouthMaskUrl: (url) => {
+    const prev = get().mouthMaskUrl;
+    if (prev) URL.revokeObjectURL(prev);
+    set({ mouthMaskUrl: url });
+  },
 
   clearAll: () => {
     const { uploadedPhotos, mouthMaskUrl } = get();

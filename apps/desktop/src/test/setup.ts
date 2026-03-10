@@ -9,12 +9,6 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   };
 }
 
-// Polyfill URL.revokeObjectURL for jsdom (needed for vi.spyOn in store tests)
-if (typeof URL.revokeObjectURL === "undefined") {
-  URL.revokeObjectURL = () => {};
-}
-
-// Polyfill URL.createObjectURL for jsdom (needed for store tests)
-if (typeof URL.createObjectURL === "undefined") {
-  URL.createObjectURL = () => "blob:http://localhost/mock";
-}
+// Polyfill URL methods for jsdom — these are not implemented in the jsdom test environment
+URL.revokeObjectURL = URL.revokeObjectURL ?? (() => {});
+URL.createObjectURL = URL.createObjectURL ?? (() => "blob:http://localhost/mock");
