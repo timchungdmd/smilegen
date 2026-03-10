@@ -151,7 +151,7 @@ export const useCaseStore = create<CaseStore>((set, get) => ({
     vs.setSmileArcY(saved.overlaySettings.smileArcY);
     vs.setGingivalLineY(saved.overlaySettings.gingivalLineY);
     vs.setOverlayOpacity(saved.overlaySettings.overlayOpacity);
-    vs.setActiveView(generatedDesign ? "design" : "import");
+    vs.setActiveView(generatedDesign ? "simulate" : "capture");
   },
 
   newCase: () => {
@@ -160,7 +160,7 @@ export const useCaseStore = create<CaseStore>((set, get) => ({
     // Reset all design state (plan, design, variants, etc.)
     useDesignStore.getState().resetDesign();
     // Navigate back to import view
-    useViewportStore.getState().setActiveView("import");
+    useViewportStore.getState().setActiveView("capture");
     set({ caseRecord: null, mappingState: null });
   },
 }));
