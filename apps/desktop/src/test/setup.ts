@@ -9,6 +9,7 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   };
 }
 
-// Polyfill URL methods for jsdom — these are not implemented in the jsdom test environment
-URL.revokeObjectURL = URL.revokeObjectURL ?? (() => {});
-URL.createObjectURL = URL.createObjectURL ?? (() => "blob:http://localhost/mock");
+// Polyfill URL methods for jsdom — unconditional stubs ensure deterministic behavior
+// regardless of jsdom version. These are safe to overwrite (plain no-op functions).
+URL.revokeObjectURL = () => {};
+URL.createObjectURL = () => "blob:http://localhost/mock";
