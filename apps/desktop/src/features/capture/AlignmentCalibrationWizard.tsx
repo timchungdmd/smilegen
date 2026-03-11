@@ -1,195 +1,145 @@
 /**
  * AlignmentCalibrationWizard
  *
- * Semi-automated 2-point photo-to-arch alignment.
+ * Full-viewport modal with two phases:
+ *   Phase 1 (photo) — User clicks reference points on the patient photo
+ *   Phase 2 (scan)  — User clicks the corresponding points on the 3D arch scan
  *
- * Clinical workflow:
- *   Step 1 — User clicks the midline on the patient photo
- *             → stores an "incisal" AlignmentMarker for tooth "8"
- *             → seeds midlineX and smileArcY in ViewportStore
- *   Step 2 — User clicks the right commissure (corner of mouth)
- *             → stores a commissure marker
- *             → derives scale + arch half-width
- *   Step 3 — "Apply Calibration" calls buildCalibrationFromGuides() and
- *             writes midlineX, smileArcY, leftCommissureX, rightCommissureX
- *             back to ViewportStore so the smile-arc overlay snaps to the photo
- *
- * The photo is displayed as a fully-interactive overlay: the user clicks
- * to place markers; markers can be dragged to refine.
- *
- * Integration:
- *   Render this component inside CaptureView when at least one patient
- *   photo has been uploaded.
+ * Features:
+ *   - Reference point checklist (Right/Left Central + optional Right/Left Canine)
+ *   - Undo stack (Cmd/Ctrl+Z + Undo button)
+ *   - Apply Calibration (derives midline, smile arc, commissure positions)
  */
 
-import { useState, useRef, useCallback, useEffect } from "react";
-import { useViewportStore } from "../../store/useViewportStore";
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import * as THREE from "three";
 import { useImportStore } from "../../store/useImportStore";
-import { buildCalibrationFromGuides } from "../alignment/archModel";
+import { useViewportStore } from "../../store/useViewportStore";
+import {
+  buildCalibrationFromIncisalPoints,
+  IncisalReferencePoint,
+} from "../alignment/archModel";
+import { AlignmentScanViewer } from "./AlignmentScanViewer";
 
-// ── Step definitions ──────────────────────────────────────────────────────────
+// ─── Reference point definitions ─────────────────────────────────────────────
 
-type WizardStep = "midline" | "commissure" | "review";
-
-interface StepDef {
-  id: WizardStep;
-  number: number;
+export interface WizardRefPoint {
+  id: string;
   label: string;
-  instruction: string;
+  required: boolean;
   color: string;
 }
 
-const STEPS: StepDef[] = [
-  {
-    id: "midline",
-    number: 1,
-    label: "Midline",
-    instruction:
-      "Click the tip of the upper central incisor (midline) on the photo.",
-    color: "#00b4d8",
-  },
-  {
-    id: "commissure",
-    number: 2,
-    label: "Commissure",
-    instruction:
-      "Click the right corner of the mouth (right commissure).",
-    color: "#f59e0b",
-  },
-  {
-    id: "review",
-    number: 3,
-    label: "Apply",
-    instruction: "Review your placement, then apply the calibration.",
-    color: "#34d399",
-  },
+export const WIZARD_REF_POINTS: WizardRefPoint[] = [
+  { id: "central-R", label: "Right Central", required: true,  color: "#00b4d8" },
+  { id: "central-L", label: "Left Central",  required: true,  color: "#4ade80" },
+  { id: "canine-R",  label: "Right Canine",  required: false, color: "#f59e0b" },
+  { id: "canine-L",  label: "Left Canine",   required: false, color: "#f97316" },
 ];
 
-// ── Marker types ──────────────────────────────────────────────────────────────
+// ─── State types ─────────────────────────────────────────────────────────────
 
-interface ClickPoint {
-  xPercent: number; // 0–100 % of photo width
-  yPercent: number; // 0–100 % of photo height
+type Phase = "photo" | "scan";
+
+interface PointCoords2D { xPercent: number; yPercent: number; }
+interface PointCoords3D { x: number; y: number; z: number; }
+
+interface PointState {
+  photo: PointCoords2D | null;
+  scan:  PointCoords3D | null;
 }
 
-// ── Sub-component: step rail ──────────────────────────────────────────────────
+type UndoEntry = { phase: "photo" | "scan"; pointId: string };
 
-function StepRail({
-  active,
-  midlineSet,
-  commissureSet,
-}: {
-  active: WizardStep;
-  midlineSet: boolean;
-  commissureSet: boolean;
-}) {
+// ─── Style constants ──────────────────────────────────────────────────────────
+
+const MODAL_OVERLAY_STYLE: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 1000,
+  background: "var(--bg-primary, #111827)",
+  display: "flex",
+  flexDirection: "column",
+};
+const TOP_BAR_STYLE: React.CSSProperties = {
+  display: "flex", alignItems: "center", justifyContent: "space-between",
+  padding: "8px 16px",
+  borderBottom: "1px solid var(--border, #2a2f3b)",
+  background: "var(--bg-secondary, #1a1f2b)",
+  flexShrink: 0,
+  height: 48,
+};
+const PANEL_HEADER_STYLE: React.CSSProperties = {
+  display: "flex", alignItems: "center", justifyContent: "space-between",
+  padding: "6px 12px",
+  borderBottom: "1px solid var(--border, #2a2f3b)",
+  background: "var(--bg-secondary, #1a1f2b)",
+  flexShrink: 0,
+};
+const BOTTOM_BAR_STYLE: React.CSSProperties = {
+  display: "flex", alignItems: "center", justifyContent: "space-between",
+  padding: "10px 16px",
+  borderTop: "1px solid var(--border, #2a2f3b)",
+  background: "var(--bg-secondary, #1a1f2b)",
+  flexShrink: 0,
+  gap: 12,
+  flexWrap: "wrap",
+};
+const BTN_PRIMARY_STYLE: React.CSSProperties = {
+  padding: "7px 16px", background: "var(--accent, #00b4d8)",
+  color: "#fff", border: "none", borderRadius: 6,
+  fontSize: 12, fontWeight: 600, cursor: "pointer",
+};
+const BTN_SECONDARY_STYLE: React.CSSProperties = {
+  padding: "7px 12px", background: "var(--bg-tertiary, #252b38)",
+  color: "var(--text-muted, #8892a0)",
+  border: "1px solid var(--border, #2a2f3b)",
+  borderRadius: 6, fontSize: 12, cursor: "pointer",
+};
+const BTN_DISABLED_STYLE: React.CSSProperties = {
+  ...BTN_PRIMARY_STYLE, opacity: 0.4, cursor: "not-allowed",
+};
+const BTN_CLOSE_STYLE: React.CSSProperties = {
+  background: "none", border: "none",
+  color: "var(--text-muted)", cursor: "pointer", fontSize: 18, padding: 4,
+};
+const SUCCESS_BANNER_STYLE: React.CSSProperties = {
+  padding: "7px 14px", background: "rgba(52,211,153,0.1)",
+  border: "1px solid rgba(52,211,153,0.3)",
+  borderRadius: 6, fontSize: 12, color: "#34d399",
+};
+
+// ─── PhaseChip helper ─────────────────────────────────────────────────────────
+
+function PhaseChip({ label, active, done }: { label: string; active: boolean; done: boolean }) {
   return (
-    <div style={{ display: "flex", gap: 0, marginBottom: 12 }}>
-      {STEPS.map((step, i) => {
-        const isActive = active === step.id;
-        const isDone =
-          step.id === "midline"
-            ? midlineSet
-            : step.id === "commissure"
-            ? commissureSet
-            : false;
-        return (
-          <div
-            key={step.id}
-            style={{
-              flex: 1,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 4,
-              position: "relative",
-            }}
-          >
-            {/* Connector line */}
-            {i > 0 && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: 12,
-                  left: 0,
-                  right: "50%",
-                  height: 2,
-                  background: isDone
-                    ? step.color
-                    : "var(--border, #2a2f3b)",
-                }}
-              />
-            )}
-            {i < STEPS.length - 1 && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: 12,
-                  left: "50%",
-                  right: 0,
-                  height: 2,
-                  background: isDone
-                    ? step.color
-                    : "var(--border, #2a2f3b)",
-                }}
-              />
-            )}
-            {/* Circle */}
-            <div
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: "50%",
-                background: isDone
-                  ? step.color
-                  : isActive
-                  ? `${step.color}33`
-                  : "var(--bg-tertiary, #252b38)",
-                border: `2px solid ${isActive || isDone ? step.color : "var(--border, #2a2f3b)"}`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 10,
-                fontWeight: 700,
-                color: isDone ? "#fff" : isActive ? step.color : "var(--text-muted)",
-                zIndex: 1,
-              }}
-            >
-              {isDone ? "✓" : step.number}
-            </div>
-            <span
-              style={{
-                fontSize: 10,
-                color: isActive ? step.color : "var(--text-muted, #8892a0)",
-                fontWeight: isActive ? 600 : 400,
-              }}
-            >
-              {step.label}
-            </span>
-          </div>
-        );
-      })}
-    </div>
+    <span style={{
+      padding: "3px 10px",
+      borderRadius: 12,
+      fontSize: 11,
+      fontWeight: active ? 600 : 400,
+      background: done ? "rgba(52,211,153,0.15)" : active ? "rgba(0,180,216,0.15)" : "transparent",
+      color: done ? "#34d399" : active ? "var(--accent, #00b4d8)" : "var(--text-muted)",
+      border: `1px solid ${done ? "rgba(52,211,153,0.3)" : active ? "rgba(0,180,216,0.3)" : "var(--border,#2a2f3b)"}`,
+    }}>
+      {done ? "✓ " : ""}{label}
+    </span>
   );
 }
 
-// ── Photo canvas with click + marker rendering + zoom/pan ─────────────────────
+// ─── PhotoCanvas (keeps existing zoom/pan logic, updated markers/props) ───────
 
 function PhotoCanvas({
   photoUrl,
-  midline,
-  commissure,
-  onMidlineClick,
-  onCommissureClick,
-  activeStep,
+  points,
+  onPhotoClick,
+  activePhotoPointId,
   photoOpacity,
 }: {
   photoUrl: string;
-  midline: ClickPoint | null;
-  commissure: ClickPoint | null;
-  onMidlineClick: (p: ClickPoint) => void;
-  onCommissureClick: (p: ClickPoint) => void;
-  activeStep: WizardStep;
+  points: Record<string, PointState>;
+  onPhotoClick: (p: PointCoords2D) => void;
+  activePhotoPointId: string | null;  // null = locked (scan phase)
   photoOpacity: number;
 }) {
   // Outer ref is the clipping viewport — this is what we measure for coordinates
@@ -206,7 +156,7 @@ function PhotoCanvas({
   // Tracks whether the pointer has moved enough to count as a pan (vs. a click)
   const didPanMoveRef = useRef(false);
 
-  // ── Zoom helpers ──────────────────────────────────────────────────────────
+  // ── Zoom helpers ────────────────────────────────────────────────────────────
 
   const applyZoom = useCallback((next: number) => {
     const clamped = Math.max(1, Math.min(4, next));
@@ -236,7 +186,7 @@ function PhotoCanvas({
     return () => el.removeEventListener("wheel", handler);
   }, []);
 
-  // ── Pan handlers ──────────────────────────────────────────────────────────
+  // ── Pan handlers ────────────────────────────────────────────────────────────
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -279,7 +229,7 @@ function PhotoCanvas({
     setIsPanning(false);
   }, []);
 
-  // ── Click → place marker ──────────────────────────────────────────────────
+  // ── Click → place marker ────────────────────────────────────────────────────
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -288,7 +238,7 @@ function PhotoCanvas({
         didPanMoveRef.current = false;
         return;
       }
-      if (activeStep === "review") return;
+      if (!activePhotoPointId) return;  // locked in scan phase
       const rect = outerRef.current?.getBoundingClientRect();
       // Guard: zero dimensions means the container has no layout (e.g. collapsed
       // workspace). Division by zero would produce Infinity coords and place an
@@ -300,27 +250,25 @@ function PhotoCanvas({
       const yPercent = ((e.clientY - rect.top - panY) / zoom / rect.height) * 100;
       // Ignore clicks that land in the revealed background (outside the photo area)
       if (xPercent < 0 || xPercent > 100 || yPercent < 0 || yPercent > 100) return;
-      const point: ClickPoint = { xPercent, yPercent };
-      if (activeStep === "midline") onMidlineClick(point);
-      else if (activeStep === "commissure") onCommissureClick(point);
+      onPhotoClick({ xPercent, yPercent });
     },
-    [activeStep, onMidlineClick, onCommissureClick, panX, panY, zoom]
+    [activePhotoPointId, onPhotoClick, panX, panY, zoom]
   );
 
-  // ── Cursor ────────────────────────────────────────────────────────────────
+  // ── Cursor ──────────────────────────────────────────────────────────────────
 
   const cursor = isPanning
     ? "grabbing"
     : zoom > 1
     ? "grab"
-    : activeStep === "review"
-    ? "default"
-    : "crosshair";
+    : activePhotoPointId
+    ? "crosshair"
+    : "default";
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div>
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       {/* Clipping viewport — fixed size in layout, clips zoomed content */}
       <div
         ref={outerRef}
@@ -330,11 +278,10 @@ function PhotoCanvas({
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         style={{
+          flex: 1,
           position: "relative",
           width: "100%",
           overflow: "hidden",
-          borderRadius: 8,
-          border: "1px solid var(--border, #2a2f3b)",
           background: "#000",
           userSelect: "none",
           cursor,
@@ -346,6 +293,7 @@ function PhotoCanvas({
             transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
             transformOrigin: "top left",
             width: "100%",
+            height: "100%",
           }}
         >
           <img
@@ -354,7 +302,8 @@ function PhotoCanvas({
             style={{
               display: "block",
               width: "100%",
-              height: "auto",
+              height: "100%",
+              objectFit: "contain",
               pointerEvents: "none",
               opacity: photoOpacity,
               transition: "opacity 0.1s ease",
@@ -374,112 +323,20 @@ function PhotoCanvas({
             viewBox="0 0 100 100"
             preserveAspectRatio="none"
           >
-            {/* Vertical midline guide */}
-            {midline && (
-              <line
-                x1={midline.xPercent}
-                y1={0}
-                x2={midline.xPercent}
-                y2={100}
-                stroke="#00b4d8"
-                strokeWidth={0.4}
-                strokeDasharray="2 2"
-                opacity={0.6}
-              />
-            )}
-            {/* Horizontal incisal guide */}
-            {midline && (
-              <line
-                x1={0}
-                y1={midline.yPercent}
-                x2={100}
-                y2={midline.yPercent}
-                stroke="#00b4d8"
-                strokeWidth={0.4}
-                strokeDasharray="2 2"
-                opacity={0.6}
-              />
-            )}
-
-            {/* Midline marker */}
-            {midline && (
-              <>
-                <circle
-                  cx={midline.xPercent}
-                  cy={midline.yPercent}
-                  r={1.5}
-                  fill="#00b4d8"
-                />
-                <text
-                  x={midline.xPercent + 2}
-                  y={midline.yPercent - 2}
-                  fontSize={3.5}
-                  fill="#00b4d8"
-                  fontWeight="bold"
-                >
-                  Midline
-                </text>
-              </>
-            )}
-
-            {/* Commissure marker */}
-            {commissure && (
-              <>
-                <circle
-                  cx={commissure.xPercent}
-                  cy={commissure.yPercent}
-                  r={1.5}
-                  fill="#f59e0b"
-                />
-                <text
-                  x={commissure.xPercent + 2}
-                  y={commissure.yPercent - 2}
-                  fontSize={3.5}
-                  fill="#f59e0b"
-                  fontWeight="bold"
-                >
-                  Commissure
-                </text>
-              </>
-            )}
-
-            {/* Scale line between midline and commissure */}
-            {midline && commissure && (
-              <line
-                x1={midline.xPercent}
-                y1={midline.yPercent}
-                x2={commissure.xPercent}
-                y2={commissure.yPercent}
-                stroke="#34d399"
-                strokeWidth={0.5}
-                strokeDasharray="1.5 1.5"
-                opacity={0.7}
-              />
-            )}
+            {WIZARD_REF_POINTS.map(refPt => {
+              const pt = points[refPt.id];
+              if (!pt?.photo) return null;
+              const { xPercent, yPercent } = pt.photo;
+              return (
+                <g key={refPt.id}>
+                  <circle cx={xPercent} cy={yPercent} r={1.5} fill={refPt.color} />
+                  <text x={xPercent + 2} y={yPercent - 2} fontSize={3} fill={refPt.color} fontWeight="bold">
+                    {refPt.label}
+                  </text>
+                </g>
+              );
+            })}
           </svg>
-
-          {/* Click hint overlay */}
-          {activeStep !== "review" && (
-            <div
-              style={{
-                position: "absolute",
-                bottom: 8,
-                left: "50%",
-                transform: "translateX(-50%)",
-                background: "rgba(0,0,0,0.65)",
-                color: "#fff",
-                fontSize: 11,
-                padding: "4px 10px",
-                borderRadius: 12,
-                whiteSpace: "nowrap",
-                pointerEvents: "none",
-              }}
-            >
-              {activeStep === "midline"
-                ? "Click to place midline"
-                : "Click to place commissure"}
-            </div>
-          )}
         </div>
       </div>
 
@@ -490,7 +347,8 @@ function PhotoCanvas({
           alignItems: "center",
           justifyContent: "center",
           gap: 6,
-          marginTop: 6,
+          padding: "4px 0",
+          flexShrink: 0,
         }}
       >
         <button
@@ -547,320 +405,370 @@ function PhotoCanvas({
           +
         </button>
         {zoom > 1 && (
-          <>
-            <button
-              onClick={() => { setZoom(1); setPanX(0); setPanY(0); }}
-              title="Reset zoom"
-              style={{
-                padding: "0 8px",
-                height: 26,
-                borderRadius: 6,
-                border: "1px solid var(--border, #2a2f3b)",
-                background: "var(--bg-secondary, #1a1f2b)",
-                color: "var(--text-muted, #8892a0)",
-                cursor: "pointer",
-                fontSize: 11,
-              }}
-            >
-              Reset
-            </button>
-            <span
-              style={{
-                fontSize: 10,
-                color: "var(--text-muted, #8892a0)",
-                marginLeft: 2,
-              }}
-            >
-              Alt+drag to pan
-            </span>
-          </>
+          <button
+            onClick={() => { setZoom(1); setPanX(0); setPanY(0); }}
+            title="Reset zoom"
+            style={{
+              padding: "0 8px",
+              height: 26,
+              borderRadius: 6,
+              border: "1px solid var(--border, #2a2f3b)",
+              background: "var(--bg-secondary, #1a1f2b)",
+              color: "var(--text-muted, #8892a0)",
+              cursor: "pointer",
+              fontSize: 11,
+            }}
+          >
+            Reset
+          </button>
         )}
       </div>
     </div>
   );
 }
 
-// ── Main wizard ───────────────────────────────────────────────────────────────
+// ─── Main AlignmentCalibrationWizard component ───────────────────────────────
 
 export interface AlignmentCalibrationWizardProps {
   onClose?: () => void;
 }
 
-export function AlignmentCalibrationWizard({
-  onClose,
-}: AlignmentCalibrationWizardProps) {
-  const [activeStep, setActiveStep] = useState<WizardStep>("midline");
-  const [midline, setMidline] = useState<ClickPoint | null>(null);
-  const [commissure, setCommissure] = useState<ClickPoint | null>(null);
-  const [applied, setApplied] = useState(false);
+export function AlignmentCalibrationWizard({ onClose }: AlignmentCalibrationWizardProps) {
+  const [phase, setPhase] = useState<Phase>("photo");
+  const [points, setPoints] = useState<Record<string, PointState>>(
+    () => Object.fromEntries(WIZARD_REF_POINTS.map(p => [p.id, { photo: null, scan: null }]))
+  );
   const [photoOpacity, setPhotoOpacity] = useState(1);
+  const [applied, setApplied] = useState(false);
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
 
-  const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
-  const archScanMesh = useImportStore((s) => s.archScanMesh);
-  const firstPhoto = uploadedPhotos[0];
+  const uploadedPhotos = useImportStore(s => s.uploadedPhotos);
+  const archScanMesh   = useImportStore(s => s.archScanMesh);
+  const firstPhoto     = uploadedPhotos[0];
 
-  // Viewport store actions
-  const setMidlineX = useViewportStore((s) => s.setMidlineX);
-  const setSmileArcY = useViewportStore((s) => s.setSmileArcY);
-  const setLeftCommissureX = useViewportStore((s) => s.setLeftCommissureX);
-  const setRightCommissureX = useViewportStore((s) => s.setRightCommissureX);
-  const addAlignmentMarker = useViewportStore((s) => s.addAlignmentMarker);
-  const clearAlignmentMarkers = useViewportStore((s) => s.clearAlignmentMarkers);
+  const setMidlineX         = useViewportStore(s => s.setMidlineX);
+  const setSmileArcY        = useViewportStore(s => s.setSmileArcY);
+  const setLeftCommissureX  = useViewportStore(s => s.setLeftCommissureX);
+  const setRightCommissureX = useViewportStore(s => s.setRightCommissureX);
+  const clearAlignmentMarkers = useViewportStore(s => s.clearAlignmentMarkers);
+  const addAlignmentMarker    = useViewportStore(s => s.addAlignmentMarker);
 
-  const handleMidlineClick = useCallback(
-    (p: ClickPoint) => {
-      setMidline(p);
-      setActiveStep("commissure");
-    },
-    []
-  );
+  // ── Derived state ───────────────────────────────────────────────────────────
 
-  const handleCommissureClick = useCallback(
-    (p: ClickPoint) => {
-      setCommissure(p);
-      setActiveStep("review");
-    },
-    []
-  );
+  const nextPhotoPointId = WIZARD_REF_POINTS.find(p => !points[p.id].photo)?.id ?? null;
+  const nextScanPointId  = WIZARD_REF_POINTS
+    .filter(p => points[p.id].photo !== null)
+    .find(p => !points[p.id].scan)?.id ?? null;
+
+  const requiredPhotosDone = WIZARD_REF_POINTS
+    .filter(p => p.required)
+    .every(p => points[p.id].photo !== null);
+
+  const requiredScansDone = WIZARD_REF_POINTS
+    .filter(p => p.required)
+    .every(p => points[p.id].scan !== null);
+
+  const allPhotoMarkedPointsHaveScan = WIZARD_REF_POINTS
+    .filter(p => points[p.id].photo !== null)
+    .every(p => points[p.id].scan !== null);
+
+  const canApply = requiredPhotosDone && requiredScansDone && allPhotoMarkedPointsHaveScan;
+
+  // ── Undo ────────────────────────────────────────────────────────────────────
+
+  const handleUndo = useCallback(() => {
+    setUndoStack(prev => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      setPoints(pts => ({
+        ...pts,
+        [last.pointId]: {
+          ...pts[last.pointId],
+          [last.phase]: null,
+        },
+      }));
+      if (last.phase === "scan") setPhase("scan");
+      if (last.phase === "photo") setPhase("photo");
+      setApplied(false);
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "z") {
+        e.preventDefault();
+        handleUndo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleUndo]);
+
+  // ── Photo click ─────────────────────────────────────────────────────────────
+
+  const handlePhotoClick = useCallback((p: PointCoords2D) => {
+    if (phase !== "photo" || !nextPhotoPointId) return;
+    setPoints(pts => ({
+      ...pts,
+      [nextPhotoPointId]: { ...pts[nextPhotoPointId], photo: p },
+    }));
+    setUndoStack(prev => [...prev, { phase: "photo", pointId: nextPhotoPointId }]);
+  }, [phase, nextPhotoPointId]);
+
+  // ── Scan pick ───────────────────────────────────────────────────────────────
+
+  const handleScanPick = useCallback((p: PointCoords3D) => {
+    if (phase !== "scan" || !nextScanPointId) return;
+    setPoints(pts => ({
+      ...pts,
+      [nextScanPointId]: { ...pts[nextScanPointId], scan: p },
+    }));
+    setUndoStack(prev => [...prev, { phase: "scan", pointId: nextScanPointId }]);
+  }, [phase, nextScanPointId]);
+
+  // ── Apply calibration ───────────────────────────────────────────────────────
 
   const handleApply = () => {
-    if (!midline || !commissure) return;
+    const rPt = points["central-R"];
+    const lPt = points["central-L"];
+    if (!rPt.photo || !lPt.photo || !rPt.scan || !lPt.scan) return;
 
-    // Derive the calibration (uses commissure as the right commissure).
-    // Mirror the right commissure to get left commissure (symmetry assumption).
-    const rightCommissureX = commissure.xPercent;
-    const leftCommissureX = midline.xPercent - (commissure.xPercent - midline.xPercent);
+    const centralR: IncisalReferencePoint = {
+      photoX: rPt.photo.xPercent, photoY: rPt.photo.yPercent,
+      scanX: rPt.scan.x, scanY: rPt.scan.y, scanZ: rPt.scan.z,
+    };
+    const centralL: IncisalReferencePoint = {
+      photoX: lPt.photo.xPercent, photoY: lPt.photo.yPercent,
+      scanX: lPt.scan.x, scanY: lPt.scan.y, scanZ: lPt.scan.z,
+    };
 
     const archScanWidth = archScanMesh?.bounds.width;
     const archScanDepth = archScanMesh
       ? archScanMesh.bounds.maxY - archScanMesh.bounds.minY
       : undefined;
 
-    buildCalibrationFromGuides(
-      midline.xPercent,
-      midline.yPercent,
-      100, // viewWidth = 100 (percent-based)
-      100, // viewHeight = 100
-      archScanWidth,
-      archScanDepth,
-      Math.max(0, leftCommissureX),
-      rightCommissureX
+    const cal = buildCalibrationFromIncisalPoints(
+      centralR, centralL, 100, 100, archScanWidth, archScanDepth
     );
 
-    // Write guide positions to ViewportStore (they drive the photo overlay)
-    setMidlineX(midline.xPercent);
-    setSmileArcY(midline.yPercent);
-    setLeftCommissureX(Math.max(0, leftCommissureX));
-    setRightCommissureX(rightCommissureX);
+    // Derive commissure store positions from calibration
+    const commissureOffsetPercent = cal.archHalfWidth * cal.scale;
+    const midlinePercent = cal.midlineX;    // viewWidth=100 so midlineX IS the percent
+    const incisalPercent = cal.incisalY;    // viewHeight=100 so incisalY IS the percent
 
-    // Store as alignment markers for persistence
+    setMidlineX(midlinePercent);
+    setSmileArcY(incisalPercent);
+    setLeftCommissureX(Math.max(0, midlinePercent - commissureOffsetPercent));
+    setRightCommissureX(Math.min(100, midlinePercent + commissureOffsetPercent));
+
+    // Persist alignment markers
     clearAlignmentMarkers();
-    addAlignmentMarker({
-      id: "calibration-midline",
-      type: "incisal",
-      toothId: "8",
-      x: midline.xPercent,
-      y: midline.yPercent,
-    });
-    addAlignmentMarker({
-      id: "calibration-commissure",
-      type: "cusp",
-      toothId: "commissure-right",
-      x: commissure.xPercent,
-      y: commissure.yPercent,
+    WIZARD_REF_POINTS.forEach(refPt => {
+      const pt = points[refPt.id];
+      if (pt.photo) {
+        addAlignmentMarker({
+          id: `alignment-${refPt.id}`,
+          type: refPt.id.startsWith("central") ? "incisal" : "cusp",
+          toothId: refPt.id,
+          x: pt.photo.xPercent,
+          y: pt.photo.yPercent,
+        });
+      }
     });
 
     setApplied(true);
   };
 
+  // ── Reset ───────────────────────────────────────────────────────────────────
+
   const handleReset = () => {
-    setMidline(null);
-    setCommissure(null);
-    setActiveStep("midline");
+    setPoints(Object.fromEntries(WIZARD_REF_POINTS.map(p => [p.id, { photo: null, scan: null }])));
+    setUndoStack([]);
+    setPhase("photo");
     setApplied(false);
   };
 
-  const activeStepDef = STEPS.find((s) => s.id === activeStep)!;
+  // ── Guard: no photo ─────────────────────────────────────────────────────────
 
   if (!firstPhoto) {
     return (
-      <div
-        style={{
-          padding: 20,
-          textAlign: "center",
-          color: "var(--text-muted, #8892a0)",
-          fontSize: 12,
-        }}
-      >
-        Upload a patient photo to start the alignment wizard.
+      <div style={MODAL_OVERLAY_STYLE} data-testid="alignment-modal">
+        <div style={{ color: "var(--text-muted)", textAlign: "center", padding: 40 }}>
+          <p>Upload a patient photo to start the alignment wizard.</p>
+          <button onClick={onClose} style={BTN_SECONDARY_STYLE}>Close</button>
+        </div>
       </div>
     );
   }
 
+  // ── Render ──────────────────────────────────────────────────────────────────
+
+  const currentPhotoPointDef = nextPhotoPointId
+    ? WIZARD_REF_POINTS.find(p => p.id === nextPhotoPointId)!
+    : null;
+  const currentScanPointDef = nextScanPointId
+    ? WIZARD_REF_POINTS.find(p => p.id === nextScanPointId)!
+    : null;
+
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 14,
-        padding: 16,
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: "var(--text-primary, #e8eaf0)",
-            }}
-          >
-            Photo Alignment Wizard
+    <div style={MODAL_OVERLAY_STYLE} data-testid="alignment-modal">
+      {/* Top bar */}
+      <div style={TOP_BAR_STYLE}>
+        <button
+          onClick={handleUndo}
+          disabled={undoStack.length === 0}
+          style={BTN_SECONDARY_STYLE}
+          title="Undo last point (Cmd/Ctrl+Z)"
+        >
+          ↩ Undo
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <PhaseChip label="Phase 1: Mark Photo" active={phase === "photo"} done={phase === "scan"} />
+          <span style={{ color: "var(--text-muted)", fontSize: 12 }}>──</span>
+          <PhaseChip label="Phase 2: Mark Scan"  active={phase === "scan"}  done={applied} />
+        </div>
+
+        <button onClick={onClose} style={BTN_CLOSE_STYLE} title="Close wizard">✕</button>
+      </div>
+
+      {/* Two panels */}
+      <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
+
+        {/* LEFT: Photo panel */}
+        <div style={{
+          flex: 1, display: "flex", flexDirection: "column",
+          borderRight: "1px solid var(--border, #2a2f3b)",
+          overflow: "hidden",
+          opacity: phase === "scan" ? 0.7 : 1,
+          transition: "opacity 0.2s",
+        }}>
+          <div style={PANEL_HEADER_STYLE}>
+            <span style={{ fontWeight: 600, fontSize: 12 }}>Patient Photo</span>
+            {phase === "photo" && currentPhotoPointDef && (
+              <span style={{ fontSize: 11, color: currentPhotoPointDef.color }}>
+                → Click: {currentPhotoPointDef.label}
+              </span>
+            )}
           </div>
-          <div
-            style={{ fontSize: 11, color: "var(--text-muted, #8892a0)", marginTop: 2 }}
-          >
-            2-point calibration — ties the 3D arch to the photo
+          <div style={{ padding: "4px 12px", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Opacity</span>
+            <input
+              type="range" min={0} max={1} step={0.05}
+              value={photoOpacity}
+              onChange={e => setPhotoOpacity(Number(e.target.value))}
+              style={{ flex: 1, accentColor: "var(--accent, #00b4d8)" }}
+            />
+            <span style={{ fontSize: 11, color: "var(--text-muted)", minWidth: 30, textAlign: "right" }}>
+              {Math.round(photoOpacity * 100)}%
+            </span>
+          </div>
+          <div style={{ flex: 1, overflow: "hidden" }}>
+            <PhotoCanvas
+              photoUrl={firstPhoto.url}
+              points={points}
+              onPhotoClick={handlePhotoClick}
+              activePhotoPointId={phase === "photo" ? nextPhotoPointId : null}
+              photoOpacity={photoOpacity}
+            />
           </div>
         </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              fontSize: 18,
-              lineHeight: 1,
-              padding: 4,
-            }}
-            title="Close wizard"
-          >
-            ×
-          </button>
-        )}
-      </div>
 
-      {/* Step rail */}
-      <StepRail
-        active={activeStep}
-        midlineSet={midline !== null}
-        commissureSet={commissure !== null}
-      />
-
-      {/* Instruction */}
-      <div
-        style={{
-          padding: "8px 12px",
-          background: `${activeStepDef.color}15`,
-          border: `1px solid ${activeStepDef.color}40`,
-          borderRadius: 6,
-          fontSize: 12,
-          color: activeStepDef.color,
-        }}
-      >
-        <strong>Step {activeStepDef.number}:</strong> {activeStepDef.instruction}
-      </div>
-
-      {/* Photo opacity slider */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        <span
-          style={{
-            fontSize: 11,
-            color: "var(--text-muted, #8892a0)",
-            whiteSpace: "nowrap",
-            flexShrink: 0,
-          }}
-        >
-          Photo opacity
-        </span>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={photoOpacity}
-          onChange={(e) => setPhotoOpacity(Number(e.target.value))}
-          style={{ flex: 1, accentColor: "var(--accent, #00b4d8)", cursor: "pointer" }}
-          aria-label="Photo opacity"
-        />
-        <span
-          style={{
-            fontSize: 11,
-            color: "var(--text-muted, #8892a0)",
-            minWidth: 30,
-            textAlign: "right",
-          }}
-        >
-          {Math.round(photoOpacity * 100)}%
-        </span>
-      </div>
-
-      {/* Photo canvas */}
-      <PhotoCanvas
-        photoUrl={firstPhoto.url}
-        midline={midline}
-        commissure={commissure}
-        onMidlineClick={handleMidlineClick}
-        onCommissureClick={handleCommissureClick}
-        activeStep={activeStep}
-        photoOpacity={photoOpacity}
-      />
-
-      {/* Actions */}
-      <div style={{ display: "flex", gap: 8 }}>
-        {activeStep === "review" && !applied && (
-          <button
-            className="btn btn-primary"
-            style={{ flex: 1 }}
-            onClick={handleApply}
-            disabled={!midline || !commissure}
-          >
-            Apply Calibration
-          </button>
-        )}
-        {applied && (
-          <div
-            style={{
-              flex: 1,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 12px",
-              background: "rgba(52,211,153,0.1)",
-              border: "1px solid rgba(52,211,153,0.3)",
-              borderRadius: 6,
-              fontSize: 11,
-              color: "#34d399",
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
-            </svg>
-            Calibration applied — smile arc overlay updated
+        {/* RIGHT: Scan panel */}
+        <div style={{
+          flex: 1, display: "flex", flexDirection: "column",
+          overflow: "hidden",
+          opacity: phase === "photo" ? 0.6 : 1,
+          transition: "opacity 0.2s",
+        }}>
+          <div style={PANEL_HEADER_STYLE}>
+            <span style={{ fontWeight: 600, fontSize: 12 }}>3D Arch Scan</span>
+            {phase === "scan" && currentScanPointDef && (
+              <span style={{ fontSize: 11, color: currentScanPointDef.color }}>
+                → Click: {currentScanPointDef.label}
+              </span>
+            )}
+            {phase === "photo" && (
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Complete photo first</span>
+            )}
           </div>
-        )}
-        <button
-          className="btn"
-          onClick={handleReset}
-          title="Start over"
-        >
-          Reset
-        </button>
+          <div style={{ flex: 1, position: "relative" }}>
+            {archScanMesh ? (
+              <AlignmentScanViewer
+                archScanMesh={archScanMesh}
+                markers={WIZARD_REF_POINTS
+                  .filter(p => points[p.id].scan !== null)
+                  .map(p => ({ id: p.id, color: p.color, position: points[p.id].scan! }))}
+                onPickPoint={handleScanPick}
+                isPicking={phase === "scan" && nextScanPointId !== null}
+              />
+            ) : (
+              <div style={{ padding: 24, color: "var(--text-muted)", fontSize: 12, textAlign: "center" }}>
+                No arch scan loaded. Upload a scan to enable scan alignment.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom bar */}
+      <div style={BOTTOM_BAR_STYLE}>
+        {/* Checklist */}
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {WIZARD_REF_POINTS.map(refPt => {
+            const pt = points[refPt.id];
+            const photoDone = pt.photo !== null;
+            const scanDone  = pt.scan !== null;
+            return (
+              <div key={refPt.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+                <span style={{
+                  width: 8, height: 8, borderRadius: "50%",
+                  background: photoDone && scanDone ? refPt.color : "var(--border, #2a2f3b)",
+                  border: `1px solid ${refPt.color}`,
+                  display: "inline-block",
+                }} />
+                <span style={{ color: photoDone ? "var(--text-primary, #e8eaf0)" : "var(--text-muted)" }}>
+                  {refPt.label}{!refPt.required && " (opt)"}
+                </span>
+                <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
+                  {photoDone ? "📷" : "○"}{scanDone ? "🦷" : "○"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <button onClick={handleReset} style={BTN_SECONDARY_STYLE}>Reset</button>
+
+          {phase === "photo" && (
+            <button
+              onClick={() => setPhase("scan")}
+              disabled={!requiredPhotosDone}
+              style={requiredPhotosDone ? BTN_PRIMARY_STYLE : BTN_DISABLED_STYLE}
+              data-testid="next-btn"
+            >
+              Next: Mark on Scan →
+            </button>
+          )}
+
+          {phase === "scan" && !applied && (
+            <button
+              onClick={handleApply}
+              disabled={!canApply}
+              style={canApply ? BTN_PRIMARY_STYLE : BTN_DISABLED_STYLE}
+              data-testid="apply-btn"
+            >
+              Apply Calibration
+            </button>
+          )}
+
+          {applied && (
+            <div style={SUCCESS_BANNER_STYLE}>✓ Calibration applied</div>
+          )}
+        </div>
       </div>
     </div>
   );
