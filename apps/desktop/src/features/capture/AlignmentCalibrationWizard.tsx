@@ -22,7 +22,7 @@
  *   photo has been uploaded.
  */
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useViewportStore } from "../../store/useViewportStore";
 import { useImportStore } from "../../store/useImportStore";
 import { buildCalibrationFromGuides } from "../alignment/archModel";
@@ -173,7 +173,7 @@ function StepRail({
   );
 }
 
-// ── Photo canvas with click + marker rendering ────────────────────────────────
+// ── Photo canvas with click + marker rendering + zoom/pan ─────────────────────
 
 function PhotoCanvas({
   photoUrl,
@@ -192,179 +192,390 @@ function PhotoCanvas({
   activeStep: WizardStep;
   photoOpacity: number;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Outer ref is the clipping viewport — this is what we measure for coordinates
+  const outerRef = useRef<HTMLDivElement>(null);
+
+  // Zoom (1–4×) and pan (pixels) state
+  const [zoom, setZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [isPanning, setIsPanning] = useState(false);
+
+  // Pan gesture tracking (use refs so mouse-move handler never stales)
+  const panOriginRef = useRef({ mouseX: 0, mouseY: 0, startPanX: 0, startPanY: 0 });
+  // Tracks whether the pointer has moved enough to count as a pan (vs. a click)
+  const didPanMoveRef = useRef(false);
+
+  // ── Zoom helpers ──────────────────────────────────────────────────────────
+
+  const applyZoom = useCallback((next: number) => {
+    const clamped = Math.max(1, Math.min(4, next));
+    setZoom(clamped);
+    if (clamped === 1) {
+      setPanX(0);
+      setPanY(0);
+    }
+  }, []);
+
+  // Scroll-wheel zoom (must be a native listener to call preventDefault)
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom((prev) => {
+        const next = Math.max(1, Math.min(4, prev + (e.deltaY < 0 ? 0.25 : -0.25)));
+        if (next === 1) {
+          setPanX(0);
+          setPanY(0);
+        }
+        return next;
+      });
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
+
+  // ── Pan handlers ──────────────────────────────────────────────────────────
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      // Middle-click or Alt+left-click starts a pan gesture
+      if (e.button === 1 || (e.button === 0 && e.altKey)) {
+        e.preventDefault();
+        setIsPanning(true);
+        didPanMoveRef.current = false;
+        panOriginRef.current = {
+          mouseX: e.clientX,
+          mouseY: e.clientY,
+          startPanX: panX,
+          startPanY: panY,
+        };
+      }
+    },
+    [panX, panY]
+  );
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!isPanning) return;
+      const dx = e.clientX - panOriginRef.current.mouseX;
+      const dy = e.clientY - panOriginRef.current.mouseY;
+      // 3-pixel threshold so a click that accidentally drifts doesn't become a pan
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        didPanMoveRef.current = true;
+      }
+      const rect = outerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const maxPanX = rect.width * (zoom - 1);
+      const maxPanY = rect.height * (zoom - 1);
+      setPanX(Math.max(-maxPanX, Math.min(0, panOriginRef.current.startPanX + dx)));
+      setPanY(Math.max(-maxPanY, Math.min(0, panOriginRef.current.startPanY + dy)));
+    },
+    [isPanning, zoom]
+  );
+
+  const handleMouseUp = useCallback(() => {
+    setIsPanning(false);
+  }, []);
+
+  // ── Click → place marker ──────────────────────────────────────────────────
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      // Suppress click that ended a pan drag
+      if (didPanMoveRef.current) {
+        didPanMoveRef.current = false;
+        return;
+      }
       if (activeStep === "review") return;
-      const rect = containerRef.current?.getBoundingClientRect();
+      const rect = outerRef.current?.getBoundingClientRect();
       // Guard: zero dimensions means the container has no layout (e.g. collapsed
       // workspace). Division by zero would produce Infinity coords and place an
       // invisible marker while still advancing the step — silently ignore instead.
       if (!rect || rect.width === 0 || rect.height === 0) return;
-      const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
-      const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
+      // Convert viewport coordinates to image-relative percentages,
+      // accounting for the current pan offset and zoom level.
+      const xPercent = ((e.clientX - rect.left - panX) / zoom / rect.width) * 100;
+      const yPercent = ((e.clientY - rect.top - panY) / zoom / rect.height) * 100;
+      // Ignore clicks that land in the revealed background (outside the photo area)
+      if (xPercent < 0 || xPercent > 100 || yPercent < 0 || yPercent > 100) return;
       const point: ClickPoint = { xPercent, yPercent };
       if (activeStep === "midline") onMidlineClick(point);
       else if (activeStep === "commissure") onCommissureClick(point);
     },
-    [activeStep, onMidlineClick, onCommissureClick]
+    [activeStep, onMidlineClick, onCommissureClick, panX, panY, zoom]
   );
 
-  const cursor =
-    activeStep === "review"
-      ? "default"
-      : activeStep === "midline"
-      ? "crosshair"
-      : "crosshair";
+  // ── Cursor ────────────────────────────────────────────────────────────────
+
+  const cursor = isPanning
+    ? "grabbing"
+    : zoom > 1
+    ? "grab"
+    : activeStep === "review"
+    ? "default"
+    : "crosshair";
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div
-      ref={containerRef}
-      onClick={handleClick}
-      style={{
-        position: "relative",
-        width: "100%",
-        cursor,
-        overflow: "hidden",
-        borderRadius: 8,
-        border: "1px solid var(--border, #2a2f3b)",
-        background: "#000",
-        userSelect: "none",
-      }}
-    >
-      <img
-        src={photoUrl}
-        alt="Patient photo"
+    <div>
+      {/* Clipping viewport — fixed size in layout, clips zoomed content */}
+      <div
+        ref={outerRef}
+        onClick={handleClick}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
         style={{
-          display: "block",
+          position: "relative",
           width: "100%",
-          height: "auto",
-          pointerEvents: "none",
-          opacity: photoOpacity,
-          transition: "opacity 0.1s ease",
+          overflow: "hidden",
+          borderRadius: 8,
+          border: "1px solid var(--border, #2a2f3b)",
+          background: "#000",
+          userSelect: "none",
+          cursor,
         }}
-        draggable={false}
-      />
-
-      {/* SVG overlay for markers */}
-      <svg
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          pointerEvents: "none",
-        }}
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
       >
-        {/* Vertical midline guide */}
-        {midline && (
-          <line
-            x1={midline.xPercent}
-            y1={0}
-            x2={midline.xPercent}
-            y2={100}
-            stroke="#00b4d8"
-            strokeWidth={0.4}
-            strokeDasharray="2 2"
-            opacity={0.6}
-          />
-        )}
-        {/* Horizontal incisal guide */}
-        {midline && (
-          <line
-            x1={0}
-            y1={midline.yPercent}
-            x2={100}
-            y2={midline.yPercent}
-            stroke="#00b4d8"
-            strokeWidth={0.4}
-            strokeDasharray="2 2"
-            opacity={0.6}
-          />
-        )}
-
-        {/* Midline marker */}
-        {midline && (
-          <>
-            <circle
-              cx={midline.xPercent}
-              cy={midline.yPercent}
-              r={1.5}
-              fill="#00b4d8"
-            />
-            <text
-              x={midline.xPercent + 2}
-              y={midline.yPercent - 2}
-              fontSize={3.5}
-              fill="#00b4d8"
-              fontWeight="bold"
-            >
-              Midline
-            </text>
-          </>
-        )}
-
-        {/* Commissure marker */}
-        {commissure && (
-          <>
-            <circle
-              cx={commissure.xPercent}
-              cy={commissure.yPercent}
-              r={1.5}
-              fill="#f59e0b"
-            />
-            <text
-              x={commissure.xPercent + 2}
-              y={commissure.yPercent - 2}
-              fontSize={3.5}
-              fill="#f59e0b"
-              fontWeight="bold"
-            >
-              Commissure
-            </text>
-          </>
-        )}
-
-        {/* Scale line between midline and commissure */}
-        {midline && commissure && (
-          <line
-            x1={midline.xPercent}
-            y1={midline.yPercent}
-            x2={commissure.xPercent}
-            y2={commissure.yPercent}
-            stroke="#34d399"
-            strokeWidth={0.5}
-            strokeDasharray="1.5 1.5"
-            opacity={0.7}
-          />
-        )}
-      </svg>
-
-      {/* Click hint overlay */}
-      {activeStep !== "review" && (
+        {/* Zoomed + panned inner content — CSS transform doesn't affect layout */}
         <div
           style={{
-            position: "absolute",
-            bottom: 8,
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "rgba(0,0,0,0.65)",
-            color: "#fff",
-            fontSize: 11,
-            padding: "4px 10px",
-            borderRadius: 12,
-            whiteSpace: "nowrap",
-            pointerEvents: "none",
+            transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+            transformOrigin: "top left",
+            width: "100%",
           }}
         >
-          {activeStep === "midline"
-            ? "Click to place midline"
-            : "Click to place commissure"}
+          <img
+            src={photoUrl}
+            alt="Patient photo"
+            style={{
+              display: "block",
+              width: "100%",
+              height: "auto",
+              pointerEvents: "none",
+              opacity: photoOpacity,
+              transition: "opacity 0.1s ease",
+            }}
+            draggable={false}
+          />
+
+          {/* SVG overlay for markers */}
+          <svg
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              pointerEvents: "none",
+            }}
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            {/* Vertical midline guide */}
+            {midline && (
+              <line
+                x1={midline.xPercent}
+                y1={0}
+                x2={midline.xPercent}
+                y2={100}
+                stroke="#00b4d8"
+                strokeWidth={0.4}
+                strokeDasharray="2 2"
+                opacity={0.6}
+              />
+            )}
+            {/* Horizontal incisal guide */}
+            {midline && (
+              <line
+                x1={0}
+                y1={midline.yPercent}
+                x2={100}
+                y2={midline.yPercent}
+                stroke="#00b4d8"
+                strokeWidth={0.4}
+                strokeDasharray="2 2"
+                opacity={0.6}
+              />
+            )}
+
+            {/* Midline marker */}
+            {midline && (
+              <>
+                <circle
+                  cx={midline.xPercent}
+                  cy={midline.yPercent}
+                  r={1.5}
+                  fill="#00b4d8"
+                />
+                <text
+                  x={midline.xPercent + 2}
+                  y={midline.yPercent - 2}
+                  fontSize={3.5}
+                  fill="#00b4d8"
+                  fontWeight="bold"
+                >
+                  Midline
+                </text>
+              </>
+            )}
+
+            {/* Commissure marker */}
+            {commissure && (
+              <>
+                <circle
+                  cx={commissure.xPercent}
+                  cy={commissure.yPercent}
+                  r={1.5}
+                  fill="#f59e0b"
+                />
+                <text
+                  x={commissure.xPercent + 2}
+                  y={commissure.yPercent - 2}
+                  fontSize={3.5}
+                  fill="#f59e0b"
+                  fontWeight="bold"
+                >
+                  Commissure
+                </text>
+              </>
+            )}
+
+            {/* Scale line between midline and commissure */}
+            {midline && commissure && (
+              <line
+                x1={midline.xPercent}
+                y1={midline.yPercent}
+                x2={commissure.xPercent}
+                y2={commissure.yPercent}
+                stroke="#34d399"
+                strokeWidth={0.5}
+                strokeDasharray="1.5 1.5"
+                opacity={0.7}
+              />
+            )}
+          </svg>
+
+          {/* Click hint overlay */}
+          {activeStep !== "review" && (
+            <div
+              style={{
+                position: "absolute",
+                bottom: 8,
+                left: "50%",
+                transform: "translateX(-50%)",
+                background: "rgba(0,0,0,0.65)",
+                color: "#fff",
+                fontSize: 11,
+                padding: "4px 10px",
+                borderRadius: 12,
+                whiteSpace: "nowrap",
+                pointerEvents: "none",
+              }}
+            >
+              {activeStep === "midline"
+                ? "Click to place midline"
+                : "Click to place commissure"}
+            </div>
+          )}
         </div>
-      )}
+      </div>
+
+      {/* Zoom controls */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 6,
+          marginTop: 6,
+        }}
+      >
+        <button
+          onClick={() => applyZoom(zoom - 0.5)}
+          disabled={zoom <= 1}
+          title="Zoom out (or scroll down)"
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 6,
+            border: "1px solid var(--border, #2a2f3b)",
+            background: "var(--bg-secondary, #1a1f2b)",
+            color: zoom <= 1 ? "var(--text-muted, #8892a0)" : "var(--text-primary, #e8eaf0)",
+            cursor: zoom <= 1 ? "default" : "pointer",
+            fontSize: 16,
+            lineHeight: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          −
+        </button>
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--text-muted, #8892a0)",
+            minWidth: 34,
+            textAlign: "center",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {zoom.toFixed(1)}×
+        </span>
+        <button
+          onClick={() => applyZoom(zoom + 0.5)}
+          disabled={zoom >= 4}
+          title="Zoom in (or scroll up)"
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: 6,
+            border: "1px solid var(--border, #2a2f3b)",
+            background: "var(--bg-secondary, #1a1f2b)",
+            color: zoom >= 4 ? "var(--text-muted, #8892a0)" : "var(--text-primary, #e8eaf0)",
+            cursor: zoom >= 4 ? "default" : "pointer",
+            fontSize: 16,
+            lineHeight: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          +
+        </button>
+        {zoom > 1 && (
+          <>
+            <button
+              onClick={() => { setZoom(1); setPanX(0); setPanY(0); }}
+              title="Reset zoom"
+              style={{
+                padding: "0 8px",
+                height: 26,
+                borderRadius: 6,
+                border: "1px solid var(--border, #2a2f3b)",
+                background: "var(--bg-secondary, #1a1f2b)",
+                color: "var(--text-muted, #8892a0)",
+                cursor: "pointer",
+                fontSize: 11,
+              }}
+            >
+              Reset
+            </button>
+            <span
+              style={{
+                fontSize: 10,
+                color: "var(--text-muted, #8892a0)",
+                marginLeft: 2,
+              }}
+            >
+              Alt+drag to pan
+            </span>
+          </>
+        )}
+      </div>
     </div>
   );
 }
