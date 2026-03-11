@@ -5,7 +5,19 @@ import { inferToothIdFromFilename } from "../features/import/importService";
 
 export interface UploadedPhoto {
   name: string;
+  /** Object URL for use in <img> src and CSS. Created at upload time. */
   url: string;
+  /**
+   * The raw file data, stored at upload time so callers can send it to APIs
+   * without needing to re-fetch the blob URL.
+   *
+   * Tauri's network layer does not handle blob: URLs, so fetch(photo.url)
+   * would fail in the desktop app. Use this field instead.
+   *
+   * Optional for backward compatibility with test fixtures that pre-populate
+   * uploadedPhotos without a real File.
+   */
+  blob?: Blob;
 }
 
 export interface UploadedToothModel {
@@ -62,6 +74,10 @@ export const useImportStore = create<ImportStore>((set, get) => ({
       uploadedPhotos: Array.from(files ?? []).map((f) => ({
         name: f.name,
         url: URL.createObjectURL(f),
+        // Store the raw File (which extends Blob) so API callers can send it
+        // directly without re-fetching the blob URL. Tauri's fetch intercept
+        // does not support blob: protocol URLs.
+        blob: f,
       })),
       importError: null,
     });

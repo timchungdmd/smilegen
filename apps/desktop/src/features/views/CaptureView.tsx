@@ -58,15 +58,21 @@ function CaptureStageHeader({
     setDetecting(true);
     setDetectError(null);
     try {
-      // Fetch Blob from the object URL created at upload time.
-      // Wrapped separately to provide a user-readable message if the blob URL is stale.
+      // Prefer the blob stored at upload time — this avoids fetch(blob: URL)
+      // which fails in Tauri because its network layer doesn't handle the
+      // browser-internal blob: protocol. Fall back to fetch only for
+      // environments where blob is not stored (e.g. test fixtures).
       let imageBlob: Blob;
-      try {
-        imageBlob = await fetch(photo.url).then((r) => r.blob());
-      } catch {
-        throw new Error(
-          "Could not read the uploaded photo. Please re-upload and try again."
-        );
+      if (photo.blob) {
+        imageBlob = photo.blob;
+      } else {
+        try {
+          imageBlob = await fetch(photo.url).then((r) => r.blob());
+        } catch {
+          throw new Error(
+            "Could not read the uploaded photo. Please re-upload and try again."
+          );
+        }
       }
 
       // Call vision service — both calls must succeed before any store writes
