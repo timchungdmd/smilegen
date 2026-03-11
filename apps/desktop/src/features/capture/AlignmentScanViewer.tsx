@@ -84,6 +84,13 @@ function ScanScene({
 
   useEffect(() => () => { geometry.dispose(); }, [geometry]);
 
+  useEffect(() => {
+    return () => {
+      // Reset cursor on unmount (in case pointer was over mesh when modal closed)
+      document.body.style.cursor = "default";
+    };
+  }, []);
+
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
     if (!isPicking) return;
     e.stopPropagation();

@@ -12,7 +12,6 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import * as THREE from "three";
 import { useImportStore } from "../../store/useImportStore";
 import { useViewportStore } from "../../store/useViewportStore";
 import {
