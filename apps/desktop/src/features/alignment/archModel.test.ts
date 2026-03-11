@@ -3,6 +3,7 @@ import {
   perspectiveScale,
   projectToothToPhoto,
   buildCalibrationFromGuides,
+  buildCalibrationFromIncisalPoints,
   DEFAULT_CALIBRATION
 } from "./archModel";
 
@@ -112,4 +113,41 @@ test("commissure guides control the scale", () => {
   // Scale should equal commissureDistancePx / archWidth
   expect(calDefault.scale).toBeCloseTo(360 / 70, 3);
   expect(calWide.scale).toBeCloseTo(480 / 70, 3);
+});
+
+describe('buildCalibrationFromIncisalPoints', () => {
+  it('computes midlineX as midpoint of the two central photo X positions', () => {
+    const centralR = { photoX: 60, photoY: 55, scanX: 4, scanY: 0, scanZ: 0 };
+    const centralL = { photoX: 40, photoY: 55, scanX: -4, scanY: 0, scanZ: 0 };
+    const cal = buildCalibrationFromIncisalPoints(centralR, centralL, 100, 100);
+    expect(cal.midlineX).toBeCloseTo(50);
+  });
+
+  it('computes incisalY as midpoint of the two central photo Y positions', () => {
+    const centralR = { photoX: 60, photoY: 50, scanX: 4, scanY: 0, scanZ: 0 };
+    const centralL = { photoX: 40, photoY: 60, scanX: -4, scanY: 0, scanZ: 0 };
+    const cal = buildCalibrationFromIncisalPoints(centralR, centralL, 100, 100);
+    expect(cal.incisalY).toBeCloseTo(55);
+  });
+
+  it('computes scale from photo distance / scan distance', () => {
+    // photo distance = sqrt((60-40)^2 + (55-55)^2) = 20 percent units
+    // scan distance  = sqrt((4-(-4))^2 + 0 + 0)     = 8 mm
+    // scale = 20 / 8 = 2.5 percent/mm
+    const centralR = { photoX: 60, photoY: 55, scanX: 4, scanY: 0, scanZ: 0 };
+    const centralL = { photoX: 40, photoY: 55, scanX: -4, scanY: 0, scanZ: 0 };
+    const cal = buildCalibrationFromIncisalPoints(centralR, centralL, 100, 100);
+    expect(cal.scale).toBeCloseTo(2.5);
+  });
+
+  it('derives commissure X from scale and archHalfWidth', () => {
+    const centralR = { photoX: 60, photoY: 55, scanX: 4, scanY: 0, scanZ: 0 };
+    const centralL = { photoX: 40, photoY: 55, scanX: -4, scanY: 0, scanZ: 0 };
+    // archHalfWidth defaults to 35mm; scale = 2.5; offset = 35 * 2.5 = 87.5 → OOB → clamped
+    // With archScanWidth=20 → archHalfWidth=10; offset = 10 * 2.5 = 25
+    // rightCommissureX = 50 + 25 = 75, leftCommissureX = 50 - 25 = 25
+    const cal = buildCalibrationFromIncisalPoints(centralR, centralL, 100, 100, 20);
+    expect(cal.midlineX).toBeCloseTo(50);
+    // scale * archHalfWidth = 2.5 * 10 = 25 → rightCommissureX ~ 75, leftCommissureX ~ 25
+  });
 });

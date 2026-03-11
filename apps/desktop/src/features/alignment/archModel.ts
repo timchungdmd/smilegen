@@ -144,6 +144,80 @@ export function projectVariantTeeth(
   }));
 }
 
+/** A single reference point: its 2D position on the photo and 3D position on the scan. */
+export interface IncisalReferencePoint {
+  /** Photo X position as percent of view width (0–100). */
+  photoX: number;
+  /** Photo Y position as percent of view height (0–100). */
+  photoY: number;
+  /** Scan X position in STL model space (mm). */
+  scanX: number;
+  /** Scan Y position in STL model space (mm). */
+  scanY: number;
+  /** Scan Z position in STL model space (mm). */
+  scanZ: number;
+}
+
+/**
+ * Build calibration from two incisal reference point correspondences.
+ *
+ * Unlike buildCalibrationFromGuides (which uses soft-tissue commissures),
+ * this function derives scale from real tooth geometry: the pixel distance
+ * between the two central incisor tips on the photo, divided by the mm
+ * distance between those same tips on the 3D scan.
+ *
+ * @param centralR  Right central incisor incisal tip (photo + scan coords)
+ * @param centralL  Left central incisor incisal tip (photo + scan coords)
+ * @param viewWidth  Photo view width in coordinate units (pass 100 for %)
+ * @param viewHeight Photo view height in coordinate units (pass 100 for %)
+ * @param archScanWidth  Optional scan bounding box width in mm (for archHalfWidth)
+ * @param archScanDepth  Optional scan bounding box depth in mm (for archDepth)
+ */
+export function buildCalibrationFromIncisalPoints(
+  centralR: IncisalReferencePoint,
+  centralL: IncisalReferencePoint,
+  viewWidth: number,
+  viewHeight: number,
+  archScanWidth?: number,
+  archScanDepth?: number
+): AlignmentCalibration {
+  // Midline = midpoint of the two central photo positions
+  const midlineXPercent = (centralR.photoX + centralL.photoX) / 2;
+  const incisalYPercent = (centralR.photoY + centralL.photoY) / 2;
+  const midlineX = (midlineXPercent / 100) * viewWidth;
+  const incisalY = (incisalYPercent / 100) * viewHeight;
+
+  // Scale: photo distance (in view units) / scan distance (in mm)
+  const photoDx = centralR.photoX - centralL.photoX;
+  const photoDy = centralR.photoY - centralL.photoY;
+  const photoDistUnits = Math.sqrt(photoDx * photoDx + photoDy * photoDy);
+
+  const scanDx = centralR.scanX - centralL.scanX;
+  const scanDy = centralR.scanY - centralL.scanY;
+  const scanDz = centralR.scanZ - centralL.scanZ;
+  const scanDistMm = Math.sqrt(scanDx * scanDx + scanDy * scanDy + scanDz * scanDz);
+
+  // Guard: if scan points are identical, fall back to default scale
+  const scale = scanDistMm > 0.01 ? photoDistUnits / scanDistMm : DEFAULT_CALIBRATION.scale;
+
+  const archHalfWidth = archScanWidth
+    ? Math.max(20, Math.min(50, archScanWidth / 2))
+    : DEFAULT_CALIBRATION.archHalfWidth;
+
+  const archDepth = archScanDepth
+    ? Math.max(8, Math.min(25, archScanDepth * 0.5))
+    : DEFAULT_CALIBRATION.archDepth;
+
+  return {
+    midlineX,
+    incisalY,
+    scale,
+    archDepth,
+    archHalfWidth,
+    cameraDistance: DEFAULT_CALIBRATION.cameraDistance,
+  };
+}
+
 /**
  * Build calibration from the existing overlay guide positions and
  * an optional arch scan's measured width.
