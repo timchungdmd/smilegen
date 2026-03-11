@@ -1,22 +1,30 @@
 /**
  * AlignmentCalibrationWizard tests
  *
- * Covers:
- *   - No-photo guard (upload prompt)
- *   - Midline click → marker placed, step advances to commissure
- *   - Commissure click → marker placed, step advances to review
- *   - Apply Calibration → viewport store updated with correct percentages
- *   - Reset → state cleared, returns to midline step
- *   - Clicks ignored in review step
- *   - getBoundingClientRect with zero dimensions is handled gracefully
+ * Tests the two-phase full-screen modal alignment wizard:
+ *   Phase 1 (photo) — user clicks reference points on the patient photo
+ *   Phase 2 (scan)  — user clicks matching points on the 3D arch scan (mocked)
  */
 
-import { render, screen, fireEvent, act } from "@testing-library/react";
-import { AlignmentCalibrationWizard } from "./AlignmentCalibrationWizard";
-import { useImportStore } from "../../store/useImportStore";
-import { useViewportStore } from "../../store/useViewportStore";
+// AlignmentScanViewer uses R3F Canvas which cannot render in jsdom — mock it
+vi.mock("./AlignmentScanViewer", () => ({
+  AlignmentScanViewer: ({
+    onPickPoint,
+    isPicking,
+  }: {
+    onPickPoint: (p: { x: number; y: number; z: number }) => void;
+    isPicking: boolean;
+  }) => (
+    <button
+      data-testid="scan-pick-btn"
+      onClick={() => isPicking && onPickPoint({ x: 4, y: 0, z: 0 })}
+    >
+      Mock Scan
+    </button>
+  ),
+}));
 
-// Prevent IndexedDB errors (same pattern as App.test.tsx)
+// Prevent IndexedDB errors from Zustand persist middleware
 vi.mock("idb-keyval", () => ({
   createStore: vi.fn(() => ({})),
   get: vi.fn().mockResolvedValue(undefined),
@@ -27,7 +35,26 @@ vi.mock("idb-keyval", () => ({
   update: vi.fn().mockResolvedValue(undefined),
 }));
 
+import { render, screen, fireEvent, act } from "@testing-library/react";
+import { AlignmentCalibrationWizard } from "./AlignmentCalibrationWizard";
+import { useImportStore } from "../../store/useImportStore";
+import { useViewportStore } from "../../store/useViewportStore";
+
 // ── helpers ────────────────────────────────────────────────────────────────
+
+// Minimal arch scan mesh so AlignmentScanViewer is rendered (not the "no scan" placeholder)
+const MOCK_ARCH_SCAN_MESH = {
+  name: "test.stl",
+  bounds: {
+    minX: -30, maxX: 30, minY: -20, maxY: 20,
+    minZ: -5, maxZ: 5,
+    width: 60, depth: 40, height: 10,
+  },
+  vertexCount: 3,
+  triangles: [
+    { a: { x: 0, y: 0, z: 0 }, b: { x: 1, y: 0, z: 0 }, c: { x: 0, y: 1, z: 0 } },
+  ],
+};
 
 const MOCK_RECT: DOMRect = {
   left: 100,
@@ -42,12 +69,9 @@ const MOCK_RECT: DOMRect = {
 };
 
 function mockRect() {
-  return vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue(MOCK_RECT);
-}
-
-// Click at (px, py) in viewport coords; component converts to percent
-function clickAt(element: Element, px: number, py: number) {
-  fireEvent.click(element, { clientX: px, clientY: py });
+  return vi
+    .spyOn(Element.prototype, "getBoundingClientRect")
+    .mockReturnValue(MOCK_RECT);
 }
 
 // ── store resets ───────────────────────────────────────────────────────────
@@ -82,95 +106,36 @@ test("shows upload prompt when no photo is loaded", () => {
   ).toBeInTheDocument();
 });
 
-test("shows wizard header when a photo is loaded", () => {
+test("renders modal with Phase 1 and Phase 2 chips when photo is loaded", () => {
   useImportStore.setState({
     uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
   });
   render(<AlignmentCalibrationWizard />);
-  expect(screen.getByText(/photo alignment wizard/i)).toBeInTheDocument();
-  expect(screen.getByText(/2-point calibration/i)).toBeInTheDocument();
+  expect(screen.getByText(/phase 1: mark photo/i)).toBeInTheDocument();
+  expect(screen.getByText(/phase 2: mark scan/i)).toBeInTheDocument();
 });
 
-test("starts on the midline step with correct instruction", () => {
-  useImportStore.setState({
-    uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
-  });
-  render(<AlignmentCalibrationWizard />);
-  expect(
-    screen.getByText(/click the tip of the upper central incisor/i)
-  ).toBeInTheDocument();
-  expect(screen.getByText(/click to place midline/i)).toBeInTheDocument();
-});
-
-test("clicking photo during midline step advances to commissure step", () => {
+test("clicking photo in phase 1 places first marker (right central)", () => {
   mockRect();
   useImportStore.setState({
     uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
   });
   render(<AlignmentCalibrationWizard />);
 
-  // Get the clickable photo canvas container (the div with crosshair cursor)
+  // In phase 1 with nextPhotoPointId set, cursor is "crosshair"
   const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
   expect(canvas).not.toBeNull();
 
-  // Click at viewport (300, 350) → xPercent=(300-100)/400*100=50, yPercent=(350-200)/300*100=50
+  // Click at viewport (300, 350) → xPercent=50, yPercent=50
   act(() => {
-    clickAt(canvas, 300, 350);
+    fireEvent.click(canvas, { clientX: 300, clientY: 350 });
   });
 
-  // Should now be on commissure step
-  expect(
-    screen.getByText(/click the right corner of the mouth/i)
-  ).toBeInTheDocument();
-  expect(screen.getByText(/click to place commissure/i)).toBeInTheDocument();
-});
-
-test("clicking photo during commissure step advances to review step", () => {
-  mockRect();
-  useImportStore.setState({
-    uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
-  });
-  render(<AlignmentCalibrationWizard />);
-
-  const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
-
-  // Place midline
-  act(() => clickAt(canvas, 300, 350));
-  // Place commissure
-  act(() => clickAt(canvas, 450, 350));
-
-  // Should be on review step — Apply Calibration button visible
-  expect(
-    screen.getByRole("button", { name: /apply calibration/i })
-  ).toBeInTheDocument();
-  // Hint overlay is gone in review step
-  expect(screen.queryByText(/click to place/i)).not.toBeInTheDocument();
-});
-
-test("marker coordinates computed correctly from getBoundingClientRect", () => {
-  mockRect();
-  useImportStore.setState({
-    uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
-  });
-  render(<AlignmentCalibrationWizard />);
-
-  const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
-
-  // Click at (300, 350): xPercent = (300-100)/400*100 = 50, yPercent = (350-200)/300*100 = 50
-  act(() => clickAt(canvas, 300, 350));
-
-  // After midline click, verify SVG shows a marker circle
-  const svg = document.querySelector("svg[viewBox='0 0 100 100']")!;
-  const circles = svg.querySelectorAll("circle");
+  const circles = document.querySelectorAll("circle");
   expect(circles.length).toBeGreaterThanOrEqual(1);
-
-  // The midline circle should be at (50, 50)
-  const midlineCircle = circles[0];
-  expect(Number(midlineCircle.getAttribute("cx"))).toBeCloseTo(50, 1);
-  expect(Number(midlineCircle.getAttribute("cy"))).toBeCloseTo(50, 1);
 });
 
-test("apply calibration writes midline and commissure to viewport store", () => {
+test("after two required photo clicks Next button enables", () => {
   mockRect();
   useImportStore.setState({
     uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
@@ -179,31 +144,161 @@ test("apply calibration writes midline and commissure to viewport store", () => 
 
   const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
 
-  // Midline click at center: (300,350) → 50%, 50%
-  act(() => clickAt(canvas, 300, 350));
-  // Commissure click at right quarter: (450,350) → 87.5%, 50%
-  act(() => clickAt(canvas, 450, 350));
+  // Click central-R at (340, 365) → xPercent=60, yPercent=55
+  act(() => {
+    fireEvent.click(canvas, { clientX: 340, clientY: 365 });
+  });
+
+  // Click central-L at (260, 365) → xPercent=40, yPercent=55
+  act(() => {
+    fireEvent.click(canvas, { clientX: 260, clientY: 365 });
+  });
+
+  const nextBtn = screen.getByTestId("next-btn");
+  expect(nextBtn).not.toBeDisabled();
+});
+
+test("undo button removes last placed photo marker", () => {
+  mockRect();
+  useImportStore.setState({
+    uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
+  });
+  render(<AlignmentCalibrationWizard />);
+
+  const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
+
+  // Place one marker
+  act(() => {
+    fireEvent.click(canvas, { clientX: 300, clientY: 350 });
+  });
+
+  expect(document.querySelectorAll("circle").length).toBeGreaterThanOrEqual(1);
+
+  // Click the Undo button
+  const undoBtn = screen.getByTitle("Undo last point (Cmd/Ctrl+Z)");
+  act(() => {
+    fireEvent.click(undoBtn);
+  });
+
+  expect(document.querySelectorAll("circle").length).toBe(0);
+});
+
+test("Cmd+Z keyboard shortcut triggers undo", () => {
+  mockRect();
+  useImportStore.setState({
+    uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
+  });
+  render(<AlignmentCalibrationWizard />);
+
+  const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
+
+  // Place one marker
+  act(() => {
+    fireEvent.click(canvas, { clientX: 300, clientY: 350 });
+  });
+
+  expect(document.querySelectorAll("circle").length).toBeGreaterThanOrEqual(1);
+
+  // Trigger Cmd+Z
+  act(() => {
+    fireEvent.keyDown(window, { key: "z", metaKey: true });
+  });
+
+  expect(document.querySelectorAll("circle").length).toBe(0);
+});
+
+test("switching to scan phase locks the photo panel", () => {
+  mockRect();
+  useImportStore.setState({
+    uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
+  });
+  render(<AlignmentCalibrationWizard />);
+
+  const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
+
+  // Place both required photo points
+  act(() => {
+    fireEvent.click(canvas, { clientX: 340, clientY: 365 });
+  });
+  act(() => {
+    fireEvent.click(canvas, { clientX: 260, clientY: 365 });
+  });
+
+  // Click Next to switch to scan phase
+  act(() => {
+    fireEvent.click(screen.getByTestId("next-btn"));
+  });
+
+  const circlesBefore = document.querySelectorAll("circle").length;
+
+  // In scan phase, the photo panel is locked (activePhotoPointId=null → cursor=default)
+  // Try clicking any element in the photo area — should not add more circles
+  const photoArea = document.querySelector<HTMLElement>(
+    '[style*="crosshair"],[style*="default"]'
+  );
+  if (photoArea) {
+    act(() => {
+      fireEvent.click(photoArea, { clientX: 300, clientY: 350 });
+    });
+  }
+
+  expect(document.querySelectorAll("circle").length).toBe(circlesBefore);
+});
+
+test("Apply Calibration updates viewport store with correct midlineX and smileArcY", () => {
+  mockRect();
+  useImportStore.setState({
+    uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
+    // Provide a non-null archScanMesh so AlignmentScanViewer (the mock) renders
+    archScanMesh: MOCK_ARCH_SCAN_MESH as any,
+  });
+  render(<AlignmentCalibrationWizard />);
+
+  const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
+
+  // Phase 1: place central-R at (340, 365) → xPercent=60, yPercent=55
+  act(() => {
+    fireEvent.click(canvas, { clientX: 340, clientY: 365 });
+  });
+  // Phase 1: place central-L at (260, 365) → xPercent=40, yPercent=55
+  act(() => {
+    fireEvent.click(canvas, { clientX: 260, clientY: 365 });
+  });
+
+  // Click Next to enter scan phase
+  act(() => {
+    fireEvent.click(screen.getByTestId("next-btn"));
+  });
+
+  // Phase 2: pick scan points via the mock button
+  // First pick is for central-R (nextScanPointId), second for central-L
+  const scanPickBtn = screen.getByTestId("scan-pick-btn");
 
   act(() => {
-    screen.getByRole("button", { name: /apply calibration/i }).click();
+    fireEvent.click(scanPickBtn);
+  });
+  act(() => {
+    fireEvent.click(scanPickBtn);
+  });
+
+  // Now Apply should be enabled
+  const applyBtn = screen.getByTestId("apply-btn");
+  act(() => {
+    fireEvent.click(applyBtn);
   });
 
   const vp = useViewportStore.getState();
-  // midlineX set to xPercent of midline click = 50
+  // midlineX = midpoint of 60 and 40 = 50 (viewWidth=100 so midlineX IS percent)
   expect(vp.midlineX).toBeCloseTo(50, 1);
-  // smileArcY set to yPercent of midline click = 50
-  expect(vp.smileArcY).toBeCloseTo(50, 1);
-  // rightCommissureX set to xPercent of commissure click = 87.5
-  expect(vp.rightCommissureX).toBeCloseTo(87.5, 1);
-  // leftCommissureX mirrored: midlineX - (rightCommissureX - midlineX) = 50 - 37.5 = 12.5
-  expect(vp.leftCommissureX).toBeCloseTo(12.5, 1);
-  // Two alignment markers stored
+  // smileArcY = midpoint of 55 and 55 = 55 (viewHeight=100 so incisalY IS percent)
+  expect(vp.smileArcY).toBeCloseTo(55, 1);
+  // Two alignment markers for the two photo-marked points
   expect(vp.alignmentMarkers).toHaveLength(2);
-  expect(vp.alignmentMarkers[0].id).toBe("calibration-midline");
-  expect(vp.alignmentMarkers[1].id).toBe("calibration-commissure");
+  expect(vp.alignmentMarkers[0].id).toBe("alignment-central-R");
+  expect(vp.alignmentMarkers[1].id).toBe("alignment-central-L");
 });
 
-test("shows success banner after applying calibration", () => {
+test("Reset clears all points and returns to photo phase", () => {
   mockRect();
   useImportStore.setState({
     uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
@@ -211,81 +306,29 @@ test("shows success banner after applying calibration", () => {
   render(<AlignmentCalibrationWizard />);
 
   const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
-  act(() => clickAt(canvas, 300, 350));
-  act(() => clickAt(canvas, 450, 350));
+
+  // Place a couple of photo points
   act(() => {
-    screen.getByRole("button", { name: /apply calibration/i }).click();
+    fireEvent.click(canvas, { clientX: 340, clientY: 365 });
   });
-
-  expect(screen.getByText(/calibration applied/i)).toBeInTheDocument();
-});
-
-test("reset clears markers and returns to midline step", () => {
-  mockRect();
-  useImportStore.setState({
-    uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
-  });
-  render(<AlignmentCalibrationWizard />);
-
-  const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
-  act(() => clickAt(canvas, 300, 350));
-  act(() => clickAt(canvas, 450, 350));
-
-  // Now reset
   act(() => {
-    screen.getByRole("button", { name: /reset/i }).click();
+    fireEvent.click(canvas, { clientX: 260, clientY: 365 });
   });
 
-  // Should be back on midline step
-  expect(
-    screen.getByText(/click the tip of the upper central incisor/i)
-  ).toBeInTheDocument();
-  // SVG markers should be gone
-  const svg = document.querySelector("svg[viewBox='0 0 100 100']")!;
-  expect(svg.querySelectorAll("circle")).toHaveLength(0);
-});
+  expect(document.querySelectorAll("circle").length).toBeGreaterThanOrEqual(2);
 
-test("clicks in review step are ignored (no additional marker)", () => {
-  mockRect();
-  useImportStore.setState({
-    uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
-  });
-  render(<AlignmentCalibrationWizard />);
-
-  const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
-  act(() => clickAt(canvas, 300, 350)); // midline
-  act(() => clickAt(canvas, 450, 350)); // commissure → now in review
-
-  const svg = document.querySelector("svg[viewBox='0 0 100 100']")!;
-  const circlesBefore = svg.querySelectorAll("circle").length;
-
-  // Click again — should be ignored (review step)
-  const reviewCanvas = document.querySelector<HTMLElement>('[style*="default"]')!;
-  act(() => clickAt(reviewCanvas, 200, 300));
-
-  expect(svg.querySelectorAll("circle")).toHaveLength(circlesBefore);
-});
-
-test("zero-dimension container is handled gracefully (no crash)", () => {
-  // Simulate broken layout where element has zero dimensions
-  vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
-    left: 0, top: 0, width: 0, height: 0,
-    right: 0, bottom: 0, x: 0, y: 0,
-    toJSON: () => ({}),
+  // Click Reset
+  act(() => {
+    fireEvent.click(screen.getByRole("button", { name: /reset/i }));
   });
 
-  useImportStore.setState({
-    uploadedPhotos: [{ name: "face.jpg", url: "blob:mock-photo" }],
-  });
-  render(<AlignmentCalibrationWizard />);
+  // Circles should be gone
+  expect(document.querySelectorAll("circle").length).toBe(0);
 
-  const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
-  // Should not throw; click should be silently ignored
-  expect(() => {
-    act(() => clickAt(canvas, 50, 50));
-  }).not.toThrow();
-  // Still on midline step (marker not placed due to NaN coords)
-  expect(
-    screen.getByText(/click the tip of the upper central incisor/i)
-  ).toBeInTheDocument();
+  // Phase 1 chip should still be visible (we are back in photo phase)
+  expect(screen.getByText(/phase 1: mark photo/i)).toBeInTheDocument();
+
+  // Next button should exist (back in photo phase) and be disabled (no points placed)
+  const nextBtn = screen.getByTestId("next-btn");
+  expect(nextBtn).toBeDisabled();
 });
