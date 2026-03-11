@@ -22,6 +22,10 @@ a = Analysis(
         "uvicorn.protocols.http",
         "uvicorn.protocols.http.auto",
         "uvicorn.protocols.http.h11_impl",
+        "uvicorn.protocols.http.httptools_impl",
+        "uvicorn.protocols.websockets",
+        "uvicorn.protocols.websockets.auto",
+        "uvicorn.protocols.websockets.websockets_impl",
         "uvicorn.lifespan",
         "uvicorn.lifespan.on",
         # mediapipe auto-detection is imperfect
