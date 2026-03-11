@@ -6,12 +6,14 @@
  *   Phase 2 (scan)  — User clicks the corresponding points on the 3D arch scan
  *
  * Features:
- *   - Reference point checklist (Right/Left Central + optional Right/Left Canine)
+ *   - 4 required base reference points (centrals + canines)
+ *   - Add extra landmark pairs beyond the base 4
  *   - Undo stack (Cmd/Ctrl+Z + Undo button)
+ *   - Navigate / Pick mode toggle for the 3D scan panel
  *   - Apply Calibration (derives midline, smile arc, commissure positions)
  */
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useImportStore } from "../../store/useImportStore";
 import { useViewportStore } from "../../store/useViewportStore";
 import {
@@ -29,6 +31,7 @@ export interface WizardRefPoint {
   color: string;
 }
 
+/** The 4 fixed base points — centrals required, canines optional extras. */
 export const WIZARD_REF_POINTS: WizardRefPoint[] = [
   { id: "central-R", label: "Right Central", required: true,  color: "#00b4d8" },
   { id: "central-L", label: "Left Central",  required: true,  color: "#4ade80" },
@@ -36,9 +39,16 @@ export const WIZARD_REF_POINTS: WizardRefPoint[] = [
   { id: "canine-L",  label: "Left Canine",   required: false, color: "#f97316" },
 ];
 
+/** Color palette for additional custom landmark points. */
+const EXTRA_POINT_COLORS = [
+  "#c084fc", "#fb7185", "#34d399", "#60a5fa",
+  "#fbbf24", "#a78bfa", "#f472b6", "#38bdf8",
+];
+
 // ─── State types ─────────────────────────────────────────────────────────────
 
 type Phase = "photo" | "scan";
+type ScanMode = "navigate" | "pick";
 
 interface PointCoords2D { xPercent: number; yPercent: number; }
 interface PointCoords3D { x: number; y: number; z: number; }
@@ -130,12 +140,14 @@ function PhaseChip({ label, active, done }: { label: string; active: boolean; do
 
 function PhotoCanvas({
   photoUrl,
+  allPoints,
   points,
   onPhotoClick,
   activePhotoPointId,
   photoOpacity,
 }: {
   photoUrl: string;
+  allPoints: WizardRefPoint[];
   points: Record<string, PointState>;
   onPhotoClick: (p: PointCoords2D) => void;
   activePhotoPointId: string | null;  // null = locked (scan phase)
@@ -322,14 +334,27 @@ function PhotoCanvas({
             viewBox="0 0 100 100"
             preserveAspectRatio="none"
           >
-            {WIZARD_REF_POINTS.map(refPt => {
+            {allPoints.map(refPt => {
               const pt = points[refPt.id];
               if (!pt?.photo) return null;
               const { xPercent, yPercent } = pt.photo;
               return (
                 <g key={refPt.id}>
-                  <circle cx={xPercent} cy={yPercent} r={1.5} fill={refPt.color} />
-                  <text x={xPercent + 2} y={yPercent - 2} fontSize={3} fill={refPt.color} fontWeight="bold">
+                  {/* Single dot marker with thin outline for contrast */}
+                  <circle
+                    cx={xPercent} cy={yPercent}
+                    r={0.8}
+                    fill={refPt.color}
+                    stroke="rgba(0,0,0,0.45)"
+                    strokeWidth={0.18}
+                  />
+                  <text
+                    x={xPercent + 1.1} y={yPercent - 1.1}
+                    fontSize={2}
+                    fill={refPt.color}
+                    fontWeight="bold"
+                    style={{ textShadow: "0 0 2px rgba(0,0,0,0.8)" }}
+                  >
                     {refPt.label}
                   </text>
                 </g>
@@ -434,12 +459,20 @@ export interface AlignmentCalibrationWizardProps {
 
 export function AlignmentCalibrationWizard({ onClose }: AlignmentCalibrationWizardProps) {
   const [phase, setPhase] = useState<Phase>("photo");
+  const [scanMode, setScanMode] = useState<ScanMode>("navigate");
+  const [extraPoints, setExtraPoints] = useState<WizardRefPoint[]>([]);
   const [points, setPoints] = useState<Record<string, PointState>>(
     () => Object.fromEntries(WIZARD_REF_POINTS.map(p => [p.id, { photo: null, scan: null }]))
   );
   const [photoOpacity, setPhotoOpacity] = useState(1);
   const [applied, setApplied] = useState(false);
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
+
+  // Combined ordered list of all reference points (base + user-added)
+  const allPoints = useMemo(
+    () => [...WIZARD_REF_POINTS, ...extraPoints],
+    [extraPoints]
+  );
 
   const uploadedPhotos = useImportStore(s => s.uploadedPhotos);
   const archScanMesh   = useImportStore(s => s.archScanMesh);
@@ -451,27 +484,54 @@ export function AlignmentCalibrationWizard({ onClose }: AlignmentCalibrationWiza
   const setRightCommissureX = useViewportStore(s => s.setRightCommissureX);
   const clearAlignmentMarkers = useViewportStore(s => s.clearAlignmentMarkers);
   const addAlignmentMarker    = useViewportStore(s => s.addAlignmentMarker);
+  const setShowOverlay      = useViewportStore(s => s.setShowOverlay);
+  const setDesignTab        = useViewportStore(s => s.setDesignTab);
 
   // ── Derived state ───────────────────────────────────────────────────────────
 
-  const nextPhotoPointId = WIZARD_REF_POINTS.find(p => !points[p.id].photo)?.id ?? null;
-  const nextScanPointId  = WIZARD_REF_POINTS
-    .filter(p => points[p.id].photo !== null)
-    .find(p => !points[p.id].scan)?.id ?? null;
+  const nextPhotoPointId = allPoints.find(p => !points[p.id]?.photo)?.id ?? null;
+  const nextScanPointId  = allPoints
+    .filter(p => points[p.id]?.photo !== null)
+    .find(p => !points[p.id]?.scan)?.id ?? null;
 
-  const requiredPhotosDone = WIZARD_REF_POINTS
+  const requiredPhotosDone = allPoints
     .filter(p => p.required)
-    .every(p => points[p.id].photo !== null);
+    .every(p => points[p.id]?.photo !== null);
 
-  const requiredScansDone = WIZARD_REF_POINTS
+  const requiredScansDone = allPoints
     .filter(p => p.required)
-    .every(p => points[p.id].scan !== null);
+    .every(p => points[p.id]?.scan !== null);
 
-  const allPhotoMarkedPointsHaveScan = WIZARD_REF_POINTS
-    .filter(p => points[p.id].photo !== null)
-    .every(p => points[p.id].scan !== null);
+  const allPhotoMarkedPointsHaveScan = allPoints
+    .filter(p => points[p.id]?.photo !== null)
+    .every(p => points[p.id]?.scan !== null);
 
   const canApply = requiredPhotosDone && requiredScansDone && allPhotoMarkedPointsHaveScan;
+
+  // ── Add / remove extra points ────────────────────────────────────────────────
+
+  const handleAddPoint = useCallback(() => {
+    const n = extraPoints.length + 1;
+    const newPt: WizardRefPoint = {
+      id: `custom-${n}`,
+      label: `Landmark ${WIZARD_REF_POINTS.length + n}`,
+      required: true,
+      color: EXTRA_POINT_COLORS[(n - 1) % EXTRA_POINT_COLORS.length],
+    };
+    setExtraPoints(prev => [...prev, newPt]);
+    setPoints(prev => ({ ...prev, [newPt.id]: { photo: null, scan: null } }));
+  }, [extraPoints.length]);
+
+  const handleRemoveExtraPoint = useCallback((id: string) => {
+    setExtraPoints(prev => prev.filter(p => p.id !== id));
+    setPoints(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setUndoStack(prev => prev.filter(e => e.pointId !== id));
+    setApplied(false);
+  }, []);
 
   // ── Undo ────────────────────────────────────────────────────────────────────
 
@@ -561,11 +621,11 @@ export function AlignmentCalibrationWizard({ onClose }: AlignmentCalibrationWiza
     setLeftCommissureX(Math.max(0, midlinePercent - commissureOffsetPercent));
     setRightCommissureX(Math.min(100, midlinePercent + commissureOffsetPercent));
 
-    // Persist alignment markers
+    // Persist alignment markers (all photo-marked points)
     clearAlignmentMarkers();
-    WIZARD_REF_POINTS.forEach(refPt => {
+    allPoints.forEach(refPt => {
       const pt = points[refPt.id];
-      if (pt.photo) {
+      if (pt?.photo) {
         addAlignmentMarker({
           id: `alignment-${refPt.id}`,
           type: refPt.id.startsWith("central") ? "incisal" : "cusp",
@@ -577,14 +637,20 @@ export function AlignmentCalibrationWizard({ onClose }: AlignmentCalibrationWiza
     });
 
     setApplied(true);
+
+    // Activate the photo overlay so it's visible when the user navigates to Simulate
+    setShowOverlay(true);
+    setDesignTab("photo");
   };
 
   // ── Reset ───────────────────────────────────────────────────────────────────
 
   const handleReset = () => {
+    setExtraPoints([]);
     setPoints(Object.fromEntries(WIZARD_REF_POINTS.map(p => [p.id, { photo: null, scan: null }])));
     setUndoStack([]);
     setPhase("photo");
+    setScanMode("navigate");
     setApplied(false);
   };
 
@@ -604,10 +670,10 @@ export function AlignmentCalibrationWizard({ onClose }: AlignmentCalibrationWiza
   // ── Render ──────────────────────────────────────────────────────────────────
 
   const currentPhotoPointDef = nextPhotoPointId
-    ? WIZARD_REF_POINTS.find(p => p.id === nextPhotoPointId)!
+    ? allPoints.find(p => p.id === nextPhotoPointId)!
     : null;
   const currentScanPointDef = nextScanPointId
-    ? WIZARD_REF_POINTS.find(p => p.id === nextScanPointId)!
+    ? allPoints.find(p => p.id === nextScanPointId)!
     : null;
 
   return (
@@ -666,6 +732,7 @@ export function AlignmentCalibrationWizard({ onClose }: AlignmentCalibrationWiza
           <div style={{ flex: 1, overflow: "hidden" }}>
             <PhotoCanvas
               photoUrl={firstPhoto.url}
+              allPoints={allPoints}
               points={points}
               onPhotoClick={handlePhotoClick}
               activePhotoPointId={phase === "photo" ? nextPhotoPointId : null}
@@ -681,26 +748,73 @@ export function AlignmentCalibrationWizard({ onClose }: AlignmentCalibrationWiza
           opacity: phase === "photo" ? 0.6 : 1,
           transition: "opacity 0.2s",
         }}>
+          {/* Scan panel header with Navigate / Pick mode toggle */}
           <div style={PANEL_HEADER_STYLE}>
             <span style={{ fontWeight: 600, fontSize: 12 }}>3D Arch Scan</span>
-            {phase === "scan" && currentScanPointDef && (
-              <span style={{ fontSize: 11, color: currentScanPointDef.color }}>
-                → Click: {currentScanPointDef.label}
-              </span>
-            )}
-            {phase === "photo" && (
+
+            {phase === "scan" ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {/* Navigate / Pick mode toggle */}
+                <div style={{ display: "flex", borderRadius: 6, overflow: "hidden", border: "1px solid var(--border, #2a2f3b)" }}>
+                  <button
+                    onClick={() => setScanMode("navigate")}
+                    title="Navigate: rotate, pan, zoom the scan"
+                    style={{
+                      padding: "3px 10px",
+                      fontSize: 11,
+                      border: "none",
+                      borderRight: "1px solid var(--border, #2a2f3b)",
+                      background: scanMode === "navigate" ? "rgba(0,180,216,0.2)" : "var(--bg-tertiary, #252b38)",
+                      color: scanMode === "navigate" ? "var(--accent, #00b4d8)" : "var(--text-muted)",
+                      cursor: "pointer",
+                      fontWeight: scanMode === "navigate" ? 600 : 400,
+                    }}
+                  >
+                    ⊕ Navigate
+                  </button>
+                  <button
+                    onClick={() => setScanMode("pick")}
+                    title="Pick: click the scan to place a reference point"
+                    style={{
+                      padding: "3px 10px",
+                      fontSize: 11,
+                      border: "none",
+                      background: scanMode === "pick" ? "rgba(0,180,216,0.2)" : "var(--bg-tertiary, #252b38)",
+                      color: scanMode === "pick" ? "var(--accent, #00b4d8)" : "var(--text-muted)",
+                      cursor: "pointer",
+                      fontWeight: scanMode === "pick" ? 600 : 400,
+                    }}
+                  >
+                    ✦ Pick
+                  </button>
+                </div>
+
+                {scanMode === "pick" && currentScanPointDef && (
+                  <span style={{ fontSize: 11, color: currentScanPointDef.color }}>
+                    → {currentScanPointDef.label}
+                  </span>
+                )}
+                {scanMode === "navigate" && (
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    Drag to orient scan
+                  </span>
+                )}
+              </div>
+            ) : (
               <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Complete photo first</span>
             )}
           </div>
+
           <div style={{ flex: 1, position: "relative" }}>
             {archScanMesh ? (
               <AlignmentScanViewer
                 archScanMesh={archScanMesh}
-                markers={WIZARD_REF_POINTS
-                  .filter(p => points[p.id].scan !== null)
+                markers={allPoints
+                  .filter(p => points[p.id]?.scan !== null)
                   .map(p => ({ id: p.id, color: p.color, position: points[p.id].scan! }))}
                 onPickPoint={handleScanPick}
                 isPicking={phase === "scan" && nextScanPointId !== null}
+                isNavigating={scanMode === "navigate"}
               />
             ) : (
               <div style={{ padding: 24, color: "var(--text-muted)", fontSize: 12, textAlign: "center" }}>
@@ -713,12 +827,13 @@ export function AlignmentCalibrationWizard({ onClose }: AlignmentCalibrationWiza
 
       {/* Bottom bar */}
       <div style={BOTTOM_BAR_STYLE}>
-        {/* Checklist */}
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          {WIZARD_REF_POINTS.map(refPt => {
+        {/* Checklist + add landmark */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {allPoints.map(refPt => {
             const pt = points[refPt.id];
-            const photoDone = pt.photo !== null;
-            const scanDone  = pt.scan !== null;
+            const photoDone = pt?.photo !== null && pt?.photo !== undefined;
+            const scanDone  = pt?.scan !== null && pt?.scan !== undefined;
+            const isExtra   = !WIZARD_REF_POINTS.some(b => b.id === refPt.id);
             return (
               <div key={refPt.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
                 <span style={{
@@ -728,14 +843,44 @@ export function AlignmentCalibrationWizard({ onClose }: AlignmentCalibrationWiza
                   display: "inline-block",
                 }} />
                 <span style={{ color: photoDone ? "var(--text-primary, #e8eaf0)" : "var(--text-muted)" }}>
-                  {refPt.label}{!refPt.required && " (opt)"}
+                  {refPt.label}
                 </span>
                 <span style={{ color: "var(--text-muted)", fontSize: 10 }}>
                   {photoDone ? "📷" : "○"}{scanDone ? "🦷" : "○"}
                 </span>
+                {isExtra && (
+                  <button
+                    onClick={() => handleRemoveExtraPoint(refPt.id)}
+                    title={`Remove ${refPt.label}`}
+                    style={{
+                      background: "none", border: "none",
+                      color: "var(--text-muted)", cursor: "pointer",
+                      fontSize: 11, padding: "0 2px", lineHeight: 1,
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
               </div>
             );
           })}
+
+          {/* Add landmark button */}
+          <button
+            onClick={handleAddPoint}
+            title="Add an extra reference landmark pair"
+            style={{
+              padding: "2px 8px",
+              background: "var(--bg-tertiary, #252b38)",
+              color: "var(--text-muted, #8892a0)",
+              border: "1px dashed var(--border, #2a2f3b)",
+              borderRadius: 4,
+              fontSize: 11,
+              cursor: "pointer",
+            }}
+          >
+            + Add landmark
+          </button>
         </div>
 
         {/* Action buttons */}
@@ -744,7 +889,7 @@ export function AlignmentCalibrationWizard({ onClose }: AlignmentCalibrationWiza
 
           {phase === "photo" && (
             <button
-              onClick={() => setPhase("scan")}
+              onClick={() => { setPhase("scan"); setScanMode("navigate"); }}
               disabled={!requiredPhotosDone}
               style={requiredPhotosDone ? BTN_PRIMARY_STYLE : BTN_DISABLED_STYLE}
               data-testid="next-btn"

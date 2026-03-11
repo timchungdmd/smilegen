@@ -31,6 +31,8 @@ interface AlignmentScanViewerProps {
   markers: ScanMarker[];
   onPickPoint: (point: ScanPickPoint) => void;
   isPicking: boolean;
+  /** When true, OrbitControls are active and clicks do NOT place points */
+  isNavigating?: boolean;
 }
 
 // ── Converts ParsedStlMesh triangles to a THREE.BufferGeometry ─────────────
@@ -79,6 +81,7 @@ function ScanScene({
   markers,
   onPickPoint,
   isPicking,
+  isNavigating = false,
 }: AlignmentScanViewerProps) {
   const geometry = useMemo(() => buildGeometry(archScanMesh), [archScanMesh]);
 
@@ -91,8 +94,11 @@ function ScanScene({
     };
   }, []);
 
+  // Clicking picks a point only when in pick mode (not navigate mode)
+  const activePicking = isPicking && !isNavigating;
+
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
-    if (!isPicking) return;
+    if (!activePicking) return;
     e.stopPropagation();
     onPickPoint({ x: e.point.x, y: e.point.y, z: e.point.z });
   };
@@ -120,8 +126,10 @@ function ScanScene({
           center.z + size * 1.8,
         ]}
       />
+      {/* Disable orbit while in pick mode so clicks don't accidentally rotate */}
       <OrbitControls
         target={[center.x, center.y, center.z]}
+        enabled={!isPicking || isNavigating}
         enableDamping={false}
       />
       <ambientLight intensity={0.6} />
@@ -132,7 +140,7 @@ function ScanScene({
         geometry={geometry}
         onPointerDown={handlePointerDown}
         onPointerOver={() => {
-          document.body.style.cursor = isPicking ? "crosshair" : "grab";
+          document.body.style.cursor = activePicking ? "crosshair" : "grab";
         }}
         onPointerOut={() => {
           document.body.style.cursor = "default";
@@ -168,6 +176,7 @@ function ScanScene({
 // ── Exported component ────────────────────────────────────────────────────
 
 export function AlignmentScanViewer(props: AlignmentScanViewerProps) {
+  const activePicking = props.isPicking && !props.isNavigating;
   return (
     <div
       style={{
@@ -180,7 +189,7 @@ export function AlignmentScanViewer(props: AlignmentScanViewerProps) {
       <Canvas>
         <ScanScene {...props} />
       </Canvas>
-      {props.isPicking && (
+      {activePicking && (
         <div
           style={{
             position: "absolute",
