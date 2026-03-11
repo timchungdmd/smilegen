@@ -15,11 +15,11 @@ freeze-mesh:
 # Requires: Rust target aarch64-apple-darwin + x86_64-apple-darwin installed.
 # Run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 build-mac: freeze-vision freeze-mesh
-	cd apps/desktop && npm run build:tauri -- --target universal-apple-darwin
+	cd apps/desktop && pnpm run build:tauri -- --target universal-apple-darwin
 
 # Build unsigned Windows installer (.msi).
 # Must be run on Windows or via cross-compilation (not supported without Wine).
 build-windows: freeze-vision freeze-mesh
-	cd apps/desktop && npm run build:tauri -- --target x86_64-pc-windows-msvc
+	cd apps/desktop && pnpm run build:tauri -- --target x86_64-pc-windows-msvc
 
 build-all: build-mac build-windows
