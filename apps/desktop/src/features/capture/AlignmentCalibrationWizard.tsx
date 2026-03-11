@@ -167,6 +167,40 @@ function PhotoCanvas({
   // Tracks whether the pointer has moved enough to count as a pan (vs. a click)
   const didPanMoveRef = useRef(false);
 
+  // ── objectFit: contain letterbox compensation ────────────────────────────────
+  // The image uses objectFit: contain, so it may not fill the container —
+  // black bars appear on sides or top/bottom depending on aspect ratio.
+  // We track the natural image size (set when the image loads) and the container
+  // size (set via ResizeObserver) to compute the visible photo bounds. When those
+  // measurements are not yet available we fall back to a no-letterbox assumption
+  // so that tests (which use mock rects and never fire load events) still work.
+
+  const [naturalSize, setNaturalSize] = useState({ w: 0, h: 0 });
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
+
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      if (width > 0 && height > 0) setContainerSize({ w: width, h: height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Rendered image bounds within the container (layout-space, before zoom transform).
+  // Returns null when not enough info is available yet.
+  const containFit = useMemo(() => {
+    const { w: cw, h: ch } = containerSize;
+    const { w: nw, h: nh } = naturalSize;
+    if (!cw || !ch || !nw || !nh) return null;
+    const s = Math.min(cw / nw, ch / nh);
+    const w = nw * s;
+    const h = nh * s;
+    return { offsetX: (cw - w) / 2, offsetY: (ch - h) / 2, w, h };
+  }, [naturalSize, containerSize]);
+
   // ── Zoom helpers ────────────────────────────────────────────────────────────
 
   const applyZoom = useCallback((next: number) => {
@@ -255,15 +289,41 @@ function PhotoCanvas({
       // workspace). Division by zero would produce Infinity coords and place an
       // invisible marker while still advancing the step — silently ignore instead.
       if (!rect || rect.width === 0 || rect.height === 0) return;
-      // Convert viewport coordinates to image-relative percentages,
-      // accounting for the current pan offset and zoom level.
-      const xPercent = ((e.clientX - rect.left - panX) / zoom / rect.width) * 100;
-      const yPercent = ((e.clientY - rect.top - panY) / zoom / rect.height) * 100;
-      // Ignore clicks that land in the revealed background (outside the photo area)
+
+      // Undo the zoom/pan transform applied to the inner div to get a position
+      // in the container's layout coordinate space.
+      const rawX = (e.clientX - rect.left - panX) / zoom;
+      const rawY = (e.clientY - rect.top - panY) / zoom;
+
+      let xPercent: number;
+      let yPercent: number;
+
+      const { w: nw, h: nh } = naturalSize;
+      if (nw > 0 && nh > 0) {
+        // Compute objectFit: contain letterbox using the current container rect.
+        // Using rect here (not containerSize state) so we always get the live value
+        // even if the ResizeObserver hasn't fired yet (e.g. in test environments).
+        const s = Math.min(rect.width / nw, rect.height / nh);
+        const imgW = nw * s;
+        const imgH = nh * s;
+        const offsetX = (rect.width - imgW) / 2;
+        const offsetY = (rect.height - imgH) / 2;
+        xPercent = ((rawX - offsetX) / imgW) * 100;
+        yPercent = ((rawY - offsetY) / imgH) * 100;
+      } else {
+        // Natural size not yet known (image not loaded) — fall back to
+        // container-relative coordinates.  This matches the old behaviour and
+        // ensures tests (which mock getBoundingClientRect but never fire onLoad)
+        // continue to work correctly.
+        xPercent = (rawX / rect.width) * 100;
+        yPercent = (rawY / rect.height) * 100;
+      }
+
+      // Ignore clicks that land outside the photo (letterbox area)
       if (xPercent < 0 || xPercent > 100 || yPercent < 0 || yPercent > 100) return;
       onPhotoClick({ xPercent, yPercent });
     },
-    [activePhotoPointId, onPhotoClick, panX, panY, zoom]
+    [activePhotoPointId, onPhotoClick, panX, panY, zoom, naturalSize]
   );
 
   // ── Cursor ──────────────────────────────────────────────────────────────────
@@ -310,6 +370,10 @@ function PhotoCanvas({
           <img
             src={photoUrl}
             alt="Patient photo"
+            onLoad={(e) => {
+              const img = e.currentTarget;
+              setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
+            }}
             style={{
               display: "block",
               width: "100%",
@@ -322,9 +386,20 @@ function PhotoCanvas({
             draggable={false}
           />
 
-          {/* SVG overlay for markers */}
+          {/* SVG overlay for markers — positioned over the visible photo area only,
+              not the full container. This ensures marker percentages (0-100) map
+              exactly to the photo, matching PhotoOverlay's SVG coordinate space.
+              Falls back to full-container coverage when containFit is not yet
+              computed (e.g. before the image loads or the container is measured). */}
           <svg
-            style={{
+            style={containFit ? {
+              position: "absolute",
+              left: containFit.offsetX,
+              top: containFit.offsetY,
+              width: containFit.w,
+              height: containFit.h,
+              pointerEvents: "none",
+            } : {
               position: "absolute",
               inset: 0,
               width: "100%",
