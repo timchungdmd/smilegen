@@ -182,6 +182,7 @@ function PhotoCanvas({
   onMidlineClick,
   onCommissureClick,
   activeStep,
+  photoOpacity,
 }: {
   photoUrl: string;
   midline: ClickPoint | null;
@@ -189,6 +190,7 @@ function PhotoCanvas({
   onMidlineClick: (p: ClickPoint) => void;
   onCommissureClick: (p: ClickPoint) => void;
   activeStep: WizardStep;
+  photoOpacity: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -239,6 +241,8 @@ function PhotoCanvas({
           width: "100%",
           height: "auto",
           pointerEvents: "none",
+          opacity: photoOpacity,
+          transition: "opacity 0.1s ease",
         }}
         draggable={false}
       />
@@ -378,6 +382,7 @@ export function AlignmentCalibrationWizard({
   const [midline, setMidline] = useState<ClickPoint | null>(null);
   const [commissure, setCommissure] = useState<ClickPoint | null>(null);
   const [applied, setApplied] = useState(false);
+  const [photoOpacity, setPhotoOpacity] = useState(1);
 
   const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
   const archScanMesh = useImportStore((s) => s.archScanMesh);
@@ -554,6 +559,46 @@ export function AlignmentCalibrationWizard({
         <strong>Step {activeStepDef.number}:</strong> {activeStepDef.instruction}
       </div>
 
+      {/* Photo opacity slider */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--text-muted, #8892a0)",
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+          }}
+        >
+          Photo opacity
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={photoOpacity}
+          onChange={(e) => setPhotoOpacity(Number(e.target.value))}
+          style={{ flex: 1, accentColor: "var(--accent, #00b4d8)", cursor: "pointer" }}
+          aria-label="Photo opacity"
+        />
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--text-muted, #8892a0)",
+            minWidth: 30,
+            textAlign: "right",
+          }}
+        >
+          {Math.round(photoOpacity * 100)}%
+        </span>
+      </div>
+
       {/* Photo canvas */}
       <PhotoCanvas
         photoUrl={firstPhoto.url}
@@ -562,6 +607,7 @@ export function AlignmentCalibrationWizard({
         onMidlineClick={handleMidlineClick}
         onCommissureClick={handleCommissureClick}
         activeStep={activeStep}
+        photoOpacity={photoOpacity}
       />
 
       {/* Actions */}
