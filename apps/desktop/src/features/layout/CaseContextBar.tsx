@@ -109,6 +109,7 @@ export function CaseContextBar() {
   return (
     <div
       style={{
+        gridRow: 2,
         gridColumn: "1 / -1",
         display: "flex",
         alignItems: "center",

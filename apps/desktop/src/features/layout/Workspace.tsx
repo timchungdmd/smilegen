@@ -59,9 +59,12 @@ export function Workspace({ activeView }: WorkspaceProps) {
   return (
     <main
       style={{
+        gridRow: 3,
+        gridColumn: 2,
         overflow: "hidden",
         display: "flex",
         flexDirection: "column",
+        minHeight: 0,
       }}
     >
       {/* ── Core ── */}
