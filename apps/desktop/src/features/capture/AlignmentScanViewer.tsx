@@ -10,7 +10,7 @@
 
 import { Canvas, ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import * as THREE from "three";
 import type { ParsedStlMesh } from "../import/stlParser";
 
@@ -68,6 +68,7 @@ function buildGeometry(mesh: ParsedStlMesh): THREE.BufferGeometry {
 
   geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geo.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+  geo.computeBoundingBox();
   return geo;
 }
 
@@ -81,6 +82,8 @@ function ScanScene({
 }: AlignmentScanViewerProps) {
   const geometry = useMemo(() => buildGeometry(archScanMesh), [archScanMesh]);
 
+  useEffect(() => () => { geometry.dispose(); }, [geometry]);
+
   const handlePointerDown = (e: ThreeEvent<PointerEvent>) => {
     if (!isPicking) return;
     e.stopPropagation();
@@ -88,13 +91,17 @@ function ScanScene({
   };
 
   // Auto-frame on mesh change
-  const b = archScanMesh.bounds;
-  const center = new THREE.Vector3(
-    (b.minX + b.maxX) / 2,
-    (b.minY + b.maxY) / 2,
-    (b.minZ + b.maxZ) / 2
-  );
-  const size = Math.max(b.width, b.depth, b.height);
+  const { center, size } = useMemo(() => {
+    const b = archScanMesh.bounds;
+    return {
+      center: new THREE.Vector3(
+        (b.minX + b.maxX) / 2,
+        (b.minY + b.maxY) / 2,
+        (b.minZ + b.maxZ) / 2
+      ),
+      size: Math.max(b.width, b.depth, b.height),
+    };
+  }, [archScanMesh.bounds]);
 
   return (
     <>
@@ -137,6 +144,7 @@ function ScanScene({
         <mesh
           key={m.id}
           position={[m.position.x, m.position.y, m.position.z]}
+          onPointerDown={(e) => e.stopPropagation()}
         >
           <sphereGeometry args={[0.5, 12, 12]} />
           <meshStandardMaterial
