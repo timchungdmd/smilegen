@@ -533,7 +533,7 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
             RIGHT: THREE.MOUSE.PAN
           }}
         />
-        <Environment preset="studio" />
+        <Environment files="/studio_small_03_1k.hdr" />
         {/* Report camera axes each frame so the CSS gizmo can track orientation */}
         <AxisReporter onAxes={setAxisEndpoints} />
       </Canvas>

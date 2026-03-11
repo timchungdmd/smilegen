@@ -13,3 +13,6 @@ apps/desktop/src-tauri/binaries/mesh-server*
 
 # Large tooth model files — too big for GitHub; distribute separately
 teeth_library/
+
+# HDR environment maps — large binary assets, fetched at setup time
+apps/desktop/public/*.hdr
