@@ -1,15 +1,17 @@
+use tauri_plugin_shell::process::CommandChild;
+use tauri_plugin_shell::ShellExt;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
-use tauri_plugin_shell::ShellExt;
 
 const VISION_HEALTH_URL: &str = "http://localhost:8003/health";
 const MESH_HEALTH_URL: &str = "http://localhost:8002/health";
 
-/// Holds spawned-sidecar tracking info.
-/// Stored in AppState so it can be accessed for cleanup.
+/// Holds spawned sidecar child process handles.
+/// Both fields are `None` until `start_sidecars` succeeds.
+/// Keeping the handles alive prevents `CommandChild::drop` from killing the processes.
 pub struct AppState {
-    pub vision_spawned: bool,
-    pub mesh_spawned: bool,
+    pub vision_child: Option<CommandChild>,
+    pub mesh_child: Option<CommandChild>,
 }
 
 /// Tauri-managed wrapper — must implement Send + Sync via Mutex.
@@ -24,13 +26,13 @@ pub fn start_sidecars(app: &AppHandle) {
     let shell = app.shell();
 
     let spawn_result = (|| -> Result<(), Box<dyn std::error::Error>> {
-        let (_vision_rx, _vision_child) = shell.sidecar("vision-server")?.spawn()?;
-        let (_mesh_rx, _mesh_child) = shell.sidecar("mesh-server")?.spawn()?;
+        let (_vision_rx, vision_child) = shell.sidecar("vision-server")?.spawn()?;
+        let (_mesh_rx, mesh_child) = shell.sidecar("mesh-server")?.spawn()?;
 
         let state = app.state::<ManagedAppState>();
         let mut guard = state.0.lock().unwrap_or_else(|p| p.into_inner());
-        guard.vision_spawned = true;
-        guard.mesh_spawned = true;
+        guard.vision_child = Some(vision_child);
+        guard.mesh_child = Some(mesh_child);
 
         Ok(())
     })();

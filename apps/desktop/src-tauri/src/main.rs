@@ -7,8 +7,8 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(ManagedAppState(Mutex::new(commands::AppState {
-            vision_spawned: false,
-            mesh_spawned: false,
+            vision_child: None,
+            mesh_child: None,
         })))
         .setup(|app| {
             commands::start_sidecars(&app.handle());

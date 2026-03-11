@@ -16,7 +16,7 @@ const SmilePlanSchema = z.object({
   additiveBias: z.enum(["conservative", "balanced", "enhanced"]),
   symmetryMode: z.enum(["soft", "strict"]),
   selectedTeeth: z.array(z.string()),
-  treatmentMap: z.record(z.string(), z.enum(["veneer", "crown"])),
+  treatmentMap: z.record(z.string(), z.enum(["veneer", "crown", "implant"])),
   controls: SmilePlanControlsSchema,
 });
 
@@ -63,7 +63,7 @@ const CaseRecordSchema = z.object({
 // GeneratedSmileDesign — lightweight structural check; geometry arrays validated by presence only
 const GeneratedToothDesignSchema = z.object({
   toothId: z.string(),
-  treatmentType: z.enum(["veneer", "crown"]),
+  treatmentType: z.enum(["veneer", "crown", "implant"]),
   width: z.number(),
   height: z.number(),
   depth: z.number(),
