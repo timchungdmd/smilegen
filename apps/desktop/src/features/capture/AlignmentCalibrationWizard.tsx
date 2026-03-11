@@ -240,8 +240,8 @@ function PhotoCanvas({
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      // Middle-click or Alt+left-click starts a pan gesture
-      if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      // Middle-click or plain left-click starts a pan gesture
+      if (e.button === 1 || e.button === 0) {
         e.preventDefault();
         setIsPanning(true);
         didPanMoveRef.current = false;
