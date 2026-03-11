@@ -197,8 +197,11 @@ export function buildCalibrationFromIncisalPoints(
   const scanDz = centralR.scanZ - centralL.scanZ;
   const scanDistMm = Math.sqrt(scanDx * scanDx + scanDy * scanDy + scanDz * scanDz);
 
-  // Guard: if scan points are identical, fall back to default scale
-  const scale = scanDistMm > 0.01 ? photoDistUnits / scanDistMm : DEFAULT_CALIBRATION.scale;
+  // Guard: if scan points are coincident/identical, fall back to a unit-scaled default
+  const fallbackScale = (DEFAULT_CALIBRATION.scale / 600) * viewWidth;
+  const scale = scanDistMm > 0.01 && photoDistUnits > 0.01
+    ? photoDistUnits / scanDistMm
+    : fallbackScale;
 
   const archHalfWidth = archScanWidth
     ? Math.max(20, Math.min(50, archScanWidth / 2))

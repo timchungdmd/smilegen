@@ -140,14 +140,18 @@ describe('buildCalibrationFromIncisalPoints', () => {
     expect(cal.scale).toBeCloseTo(2.5);
   });
 
-  it('derives commissure X from scale and archHalfWidth', () => {
+  it('clamps archHalfWidth to minimum of 20 when archScanWidth produces half-width below 20', () => {
     const centralR = { photoX: 60, photoY: 55, scanX: 4, scanY: 0, scanZ: 0 };
     const centralL = { photoX: 40, photoY: 55, scanX: -4, scanY: 0, scanZ: 0 };
-    // archHalfWidth defaults to 35mm; scale = 2.5; offset = 35 * 2.5 = 87.5 → OOB → clamped
-    // With archScanWidth=20 → archHalfWidth=10; offset = 10 * 2.5 = 25
-    // rightCommissureX = 50 + 25 = 75, leftCommissureX = 50 - 25 = 25
+    // archScanWidth=20 → raw half = 20/2 = 10 → clamped to minimum of 20
     const cal = buildCalibrationFromIncisalPoints(centralR, centralL, 100, 100, 20);
-    expect(cal.midlineX).toBeCloseTo(50);
-    // scale * archHalfWidth = 2.5 * 10 = 25 → rightCommissureX ~ 75, leftCommissureX ~ 25
+    expect(cal.archHalfWidth).toBe(20);
+  });
+
+  it('falls back to unit-scaled default scale when scan points are coincident', () => {
+    const degenerate = { photoX: 60, photoY: 55, scanX: 0, scanY: 0, scanZ: 0 };
+    // viewWidth=100 → fallbackScale = (4.2 / 600) * 100 = 0.7
+    const cal = buildCalibrationFromIncisalPoints(degenerate, degenerate, 100, 100);
+    expect(cal.scale).toBeCloseTo(0.7, 1);
   });
 });
