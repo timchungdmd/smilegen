@@ -196,7 +196,10 @@ function PhotoCanvas({
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (activeStep === "review") return;
       const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return;
+      // Guard: zero dimensions means the container has no layout (e.g. collapsed
+      // workspace). Division by zero would produce Infinity coords and place an
+      // invisible marker while still advancing the step — silently ignore instead.
+      if (!rect || rect.width === 0 || rect.height === 0) return;
       const xPercent = ((e.clientX - rect.left) / rect.width) * 100;
       const yPercent = ((e.clientY - rect.top) / rect.height) * 100;
       const point: ClickPoint = { xPercent, yPercent };
