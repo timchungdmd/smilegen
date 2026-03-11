@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps (vision)
+        run: |
+          cd apps/vision
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Install Python deps (mesh)
+        run: |
+          cd apps/mesh
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Freeze Python sidecars
+        run: make freeze-vision freeze-mesh
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install Node deps
+        run: cd apps/desktop && npm ci
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build macOS installer
+        run: make build-mac
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smilegen-macos
+          path: apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps (vision)
+        run: |
+          cd apps/vision
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Install Python deps (mesh)
+        run: |
+          cd apps/mesh
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Freeze Python sidecars
+        run: make freeze-vision freeze-mesh
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install Node deps
+        run: cd apps/desktop && npm ci
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Windows installer
+        run: make build-windows
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smilegen-windows
+          path: apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
