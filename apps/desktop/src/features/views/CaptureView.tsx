@@ -318,36 +318,15 @@ export function CaptureView() {
         onToggleWizard={() => setShowWizard((v) => !v)}
       />
 
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          overflow: "hidden",
-          minHeight: 0,
-        }}
-      >
-        {/* Main import panel */}
-        <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
-          <ImportView />
-        </div>
-
-        {/* Alignment wizard side-panel */}
-        {showWizard && (
-          <div
-            style={{
-              width: 360,
-              flexShrink: 0,
-              borderLeft: "1px solid var(--border, #2a2f3b)",
-              overflow: "auto",
-              background: "var(--bg-primary, #111827)",
-            }}
-          >
-            <AlignmentCalibrationWizard
-              onClose={() => setShowWizard(false)}
-            />
-          </div>
-        )}
+      {/* Main content — no side panel split needed */}
+      <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>
+        <ImportView />
       </div>
+
+      {/* Full-screen modal — rendered at root level via fixed positioning */}
+      {showWizard && (
+        <AlignmentCalibrationWizard onClose={() => setShowWizard(false)} />
+      )}
     </div>
   );
 }
