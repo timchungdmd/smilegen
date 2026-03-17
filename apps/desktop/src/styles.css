@@ -18,8 +18,8 @@
   --accent-subtle: rgba(0, 180, 216, 0.08);
 
   /* Status */
-  --success: #06d6a0;
-  --success-dim: rgba(6, 214, 160, 0.12);
+  --success: #10b981;
+  --success-dim: rgba(16, 185, 129, 0.12);
   --warning: #ffd166;
   --warning-dim: rgba(255, 209, 102, 0.12);
   --danger: #ef476f;
@@ -27,8 +27,8 @@
 
   /* Text */
   --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #484f58;
+  --text-secondary: #94a0ad;
+  --text-muted: #6b7280;
   --text-accent: #58a6ff;
 
   /* Borders */
@@ -76,6 +76,7 @@
   --text-secondary: #4a5568;
   --text-muted: #9aa5b4;
   --text-accent: #0072b8;
+  --accent: #0085b5;
 
   --border: rgba(0, 0, 0, 0.08);
   --border-emphasis: rgba(0, 0, 0, 0.14);
