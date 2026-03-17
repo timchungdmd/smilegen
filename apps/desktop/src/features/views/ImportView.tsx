@@ -6,10 +6,19 @@ import { validateImportSet } from "../import/importService";
 import { SceneCanvas } from "../viewer/SceneCanvas";
 import { BUNDLED_COLLECTIONS } from "../library/bundledLibrary";
 import { HowToGuidePanel } from "./HowToGuidePanel";
+import { useResizeHandle } from "../../hooks/useResizeHandle";
 
 type DropTarget = "photos" | "arch" | "tooth" | null;
 
 export function ImportView() {
+  const { width: panelWidth, handleProps } = useResizeHandle({
+    initialWidth: 400,
+    minWidth: 300,
+    maxWidth: 500,
+    storageKey: "smilegen-import-panel-width",
+    direction: "right",
+  });
+
   const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
   const archScanMesh = useImportStore((s) => s.archScanMesh);
   const archScanName = useImportStore((s) => s.archScanName);
@@ -76,16 +85,20 @@ export function ImportView() {
 
   return (
     <div
+      className="workspace-surface workspace-surface--import"
+      data-testid="import-workspace-shell"
       style={{
         display: "grid",
-        gridTemplateColumns: "400px 1fr",
+        gridTemplateColumns: `${panelWidth}px 1fr`,
         height: "100%",
         overflow: "hidden"
       }}
     >
       {/* Left panel - Import controls */}
       <div
+        className="workspace-intake-panel"
         style={{
+          position: "relative",
           borderRight: "1px solid var(--border)",
           overflow: "auto",
           padding: 16,
@@ -94,6 +107,7 @@ export function ImportView() {
           gap: 14
         }}
       >
+        <div {...handleProps} />
         {/* Header with progress */}
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
@@ -133,7 +147,10 @@ export function ImportView() {
                 {photosLoaded ? `${uploadedPhotos.length} photo${uploadedPhotos.length > 1 ? "s" : ""} uploaded` : "Front smile, retracted, side views"}
               </div>
             </div>
-            <span className={`badge ${photosLoaded ? "badge-success" : "badge-warning"}`}>
+            <span
+              className={`badge shared-status-chip ${photosLoaded ? "badge-success" : "badge-warning"}`}
+              data-testid="shared-status-chip"
+            >
               {photosLoaded ? "ready" : "required"}
             </span>
           </div>
@@ -224,7 +241,10 @@ export function ImportView() {
                 {archLoaded ? archScanName : "Intraoral scanner export"}
               </div>
             </div>
-            <span className={`badge ${archLoaded ? "badge-success" : "badge-warning"}`}>
+            <span
+              className={`badge shared-status-chip ${archLoaded ? "badge-success" : "badge-warning"}`}
+              data-testid="shared-status-chip"
+            >
               {archLoaded ? "ready" : "required"}
             </span>
           </div>
@@ -324,7 +344,10 @@ export function ImportView() {
                 {toothLoaded ? `${uploadedToothModels.length} tooth model${uploadedToothModels.length > 1 ? "s" : ""} loaded` : "Individual tooth STL files"}
               </div>
             </div>
-            <span className={`badge ${toothLoaded ? "badge-success" : "badge-info"}`}>
+            <span
+              className={`badge shared-status-chip ${toothLoaded ? "badge-success" : "badge-info"}`}
+              data-testid="shared-status-chip"
+            >
               {toothLoaded ? "ready" : "optional"}
             </span>
           </div>
@@ -395,79 +418,84 @@ export function ImportView() {
           </div>
         </div>
 
-        {/* Validation status */}
-        {importError && (
-          <div className="import-status-banner error">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--danger)">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-            </svg>
-            <span>{importError}</span>
-          </div>
-        )}
-
-        {!validation.ok && !importError && (
-          <div className="import-status-banner warning">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--warning)">
-              <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
-            </svg>
-            <span>{validation.errors[0] ?? "Upload required assets to proceed."}</span>
-          </div>
-        )}
-
-        {validation.ok && (
-          <div className="import-generate-card">
-            <div className="import-generate-header">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--success)">
-                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+        <div className="import-action-zone" data-testid="import-action-zone">
+          {/* Validation status */}
+          {importError && (
+            <div className="import-status-banner error">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--danger)">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
               </svg>
-              <span>All required assets imported</span>
+              <span>{importError}</span>
             </div>
+          )}
 
-            <div style={{ marginBottom: 12 }}>
-              <label className="label" style={{ display: "block", marginBottom: 6 }}>
-                Tooth Morphology Library
-              </label>
-              <select
-                className="input"
-                value={activeCollectionId ?? ""}
-                onChange={(e) => setActiveCollectionId(e.target.value || null)}
-                style={{ width: "100%" }}
+          {!validation.ok && !importError && (
+            <div className="import-status-banner warning">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--warning)">
+                <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
+              </svg>
+              <span>{validation.errors[0] ?? "Upload required assets to proceed."}</span>
+            </div>
+          )}
+
+          {validation.ok && (
+            <div className="import-generate-card">
+              <div className="import-generate-header">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--success)">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                </svg>
+                <span>All required assets imported</span>
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label className="label" style={{ display: "block", marginBottom: 6 }}>
+                  Tooth Morphology Library
+                </label>
+                <select
+                  className="input"
+                  value={activeCollectionId ?? ""}
+                  onChange={(e) => setActiveCollectionId(e.target.value || null)}
+                  style={{ width: "100%" }}
+                >
+                  <option value="">-- Select tooth shape --</option>
+                  {BUNDLED_COLLECTIONS.map((col) => (
+                    <option key={col.id} value={col.id}>
+                      {col.name}
+                    </option>
+                  ))}
+                </select>
+                {activeCollectionId && (
+                  <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4, lineHeight: 1.4 }}>
+                    {BUNDLED_COLLECTIONS.find((c) => c.id === activeCollectionId)?.description}
+                  </div>
+                )}
+              </div>
+
+              <button
+                className="btn btn-primary import-generate-btn"
+                onClick={quickGenerate}
+                disabled={!canQuickGenerate || !activeCollectionId}
               >
-                <option value="">-- Select tooth shape --</option>
-                {BUNDLED_COLLECTIONS.map((col) => (
-                  <option key={col.id} value={col.id}>
-                    {col.name}
-                  </option>
-                ))}
-              </select>
-              {activeCollectionId && (
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4, lineHeight: 1.4 }}>
-                  {BUNDLED_COLLECTIONS.find((c) => c.id === activeCollectionId)?.description}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19 8l-4 4h3c0 3.31-2.69 6-6 6-1.01 0-1.97-.25-2.8-.7l-1.46 1.46C8.97 19.54 10.43 20 12 20c4.42 0 8-3.58 8-8h3l-4-4zM6 12c0-3.31 2.69-6 6-6 1.01 0 1.97.25 2.8.7l1.46-1.46C15.03 4.46 13.57 4 12 4c-4.42 0-8 3.58-8 8H1l4 4 4-4H6z" />
+                </svg>
+                Generate Smile Design
+              </button>
+              {!activeCollectionId && (
+                <div style={{ fontSize: 11, color: "var(--warning)", marginTop: 6, textAlign: "center" }}>
+                  Select a tooth library to enable generation
                 </div>
               )}
             </div>
-
-            <button
-              className="btn btn-primary import-generate-btn"
-              onClick={quickGenerate}
-              disabled={!canQuickGenerate || !activeCollectionId}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19 8l-4 4h3c0 3.31-2.69 6-6 6-1.01 0-1.97-.25-2.8-.7l-1.46 1.46C8.97 19.54 10.43 20 12 20c4.42 0 8-3.58 8-8h3l-4-4zM6 12c0-3.31 2.69-6 6-6 1.01 0 1.97.25 2.8.7l1.46-1.46C15.03 4.46 13.57 4 12 4c-4.42 0-8 3.58-8 8H1l4 4 4-4H6z" />
-              </svg>
-              Generate Smile Design
-            </button>
-            {!activeCollectionId && (
-              <div style={{ fontSize: 11, color: "var(--warning)", marginTop: 6, textAlign: "center" }}>
-                Select a tooth library to enable generation
-              </div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Right - 3D Preview */}
-      <div style={{ display: "flex", flexDirection: "column", padding: 16, gap: 12 }}>
+      <div
+        className="workspace-canvas-panel"
+        style={{ display: "flex", flexDirection: "column", padding: 16, gap: 12 }}
+      >
         <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
           3D Scan Preview
         </div>
