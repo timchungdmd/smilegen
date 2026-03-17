@@ -31,9 +31,9 @@ test("matchShortcut with plain 1 returns view:import", () => {
   expect(matchShortcut(event)).toBe("view:import");
 });
 
-test("matchShortcut with plain 2 returns view:design", () => {
+test("matchShortcut with plain 2 returns view:align", () => {
   const event = createKeyEvent({ key: "2" });
-  expect(matchShortcut(event)).toBe("view:design");
+  expect(matchShortcut(event)).toBe("view:align");
 });
 
 test("matchShortcut with Escape returns deselect", () => {

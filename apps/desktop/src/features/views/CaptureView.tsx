@@ -1,35 +1,53 @@
 /**
- * CaptureView — Patient data capture (photos + 3D scans).
+ * CaptureView — Import and alignment workspace.
  *
- * This is the workflow-first rename of ImportView (stage 2: Capture).
- * It renders ImportView directly, adding a stage-aware header bar and
- * completion state feedback.
+ * This view now covers two case jobs:
+ *  - Import (legacy route: capture)
+ *  - Align (legacy route: overview)
+ *
+ * It renders ImportView directly, adding stage-aware framing and completion
+ * state feedback while keeping the underlying tools backward compatible.
  *
  * Future enhancements (Phase 6):
  *  - Photo quality checklist (lighting, angle, focus indicators)
  *  - Scan completeness panel (arch coverage heatmap)
- *  - "Continue to Simulate →" CTA once preconditions are met
+ *  - "Continue to Align / Design →" CTA once preconditions are met
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useImportStore } from "../../store/useImportStore";
-import { useViewportStore } from "../../store/useViewportStore";
+import { getCaseWorkflowStage, useViewportStore } from "../../store/useViewportStore";
 import { ImportView } from "./ImportView";
 import { AlignmentCalibrationWizard } from "../capture/AlignmentCalibrationWizard";
 import { detectLandmarks, getMouthMask } from "../../services/visionClient";
 import { useSidecarStore } from "../../store/useSidecarStore";
+import { useWorkspaceVariantStore } from "../experiments/workspaceVariantStore";
+import { recordAlignmentAttempt } from "../experiments/workspaceMetrics";
 
 // ── Stage header ──────────────────────────────────────────────────────────
+
+type SharedCaptureUiState = {
+  showWizard: boolean;
+  detectError: string | null;
+};
+
+const sharedCaptureUiState: SharedCaptureUiState = {
+  showWizard: false,
+  detectError: null,
+};
 
 function CaptureStageHeader({
   showWizard,
   onToggleWizard,
+  detectError,
+  setDetectError,
 }: {
   showWizard: boolean;
   onToggleWizard: () => void;
+  detectError: string | null;
+  setDetectError: (value: string | null) => void;
 }) {
   const [detecting, setDetecting] = useState(false);
-  const [detectError, setDetectError] = useState<string | null>(null);
 
   const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
   const setMouthMaskUrl = useImportStore((s) => s.setMouthMaskUrl);
@@ -43,13 +61,19 @@ function CaptureStageHeader({
   const setRightCommissureX = useViewportStore((s) => s.setRightCommissureX);
   const clearAlignmentMarkers = useViewportStore((s) => s.clearAlignmentMarkers);
   const addAlignmentMarker = useViewportStore((s) => s.addAlignmentMarker);
+  const activeView = useViewportStore((s) => s.activeView);
 
   const sidecarState = useSidecarStore((s) => s.sidecarState);
+  const stage = getCaseWorkflowStage(activeView);
+  const isAlignStage = stage === "align";
+  const stageLabel = isAlignStage ? "Align" : "Import";
+  const continueLabel = isAlignStage ? "Continue to Design" : "Continue to Align";
+  const continueTarget = isAlignStage ? "design" : "align";
 
   const hasPhotos = uploadedPhotos.length > 0;
   const photoCount = uploadedPhotos.length;
   const hasScan = Boolean(archScanName);
-  const isComplete = photoCount > 0 || hasScan;
+  const canContinue = isAlignStage ? hasPhotos && hasScan : hasPhotos || hasScan;
 
   const handleAutoDetect = async () => {
     const photo = uploadedPhotos[0];
@@ -152,7 +176,7 @@ function CaptureStageHeader({
               color: "var(--text-muted, #8892a0)",
             }}
           >
-            Capture
+            {stageLabel}
           </span>
           {photoCount > 0 && (
             <span
@@ -212,53 +236,68 @@ function CaptureStageHeader({
             {autoDetectLabel}
           </button>
 
-          {/* Alignment wizard toggle */}
-          {hasPhotos && (
-            <button
-              onClick={onToggleWizard}
-              style={{
-                padding: "6px 12px",
-                background: showWizard
-                  ? "rgba(0,180,216,0.15)"
-                  : "var(--bg-tertiary, #252b38)",
-                color: showWizard ? "var(--accent, #00b4d8)" : "var(--text-muted)",
-                border: "1px solid",
-                borderColor: showWizard
-                  ? "var(--accent, #00b4d8)"
-                  : "var(--border, #2a2f3b)",
-                borderRadius: 6,
-                fontSize: 12,
-                cursor: "pointer",
-              }}
-              title="Open the 2-point alignment wizard"
-            >
-              {showWizard ? "Hide Alignment" : "Align Photo"}
-            </button>
-          )}
+          {/* Alignment wizard toggle — always visible; disabled until a photo is uploaded */}
+          <button
+            onClick={onToggleWizard}
+            disabled={!hasPhotos}
+            style={{
+              padding: "6px 12px",
+              background: showWizard
+                ? "rgba(0,180,216,0.15)"
+                : "var(--bg-tertiary, #252b38)",
+              color: !hasPhotos
+                ? "var(--text-muted)"
+                : showWizard
+                ? "var(--accent, #00b4d8)"
+                : "var(--text-muted)",
+              border: "1px solid",
+              borderColor: showWizard
+                ? "var(--accent, #00b4d8)"
+                : "var(--border, #2a2f3b)",
+              borderRadius: 6,
+              fontSize: 12,
+              cursor: !hasPhotos ? "not-allowed" : "pointer",
+              opacity: !hasPhotos ? 0.5 : 1,
+            }}
+            title={
+              !hasPhotos
+                ? "Upload a patient photo first to use the alignment wizard"
+                : "Open the 2-point photo-to-scan alignment wizard"
+            }
+          >
+            {showWizard ? "Hide Alignment" : "Align Photo"}
+          </button>
 
-          {isComplete && (
-            <button
-              onClick={() => setActiveView("simulate")}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "6px 14px",
-                background: "var(--accent, #00b4d8)",
-                color: "#fff",
-                border: "none",
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Continue to Simulate
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-            </button>
-          )}
+          <button
+            onClick={() => setActiveView(continueTarget)}
+            disabled={!canContinue}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 14px",
+              background: "var(--accent, #00b4d8)",
+              color: "#fff",
+              border: "none",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: canContinue ? "pointer" : "not-allowed",
+              opacity: canContinue ? 1 : 0.5,
+            }}
+            title={
+              canContinue
+                ? undefined
+                : isAlignStage
+                ? "Upload both a patient photo and arch scan before continuing to Design."
+                : "Upload at least one photo or scan to continue through the case workflow."
+            }
+          >
+            {continueLabel}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -301,7 +340,47 @@ function CaptureStageHeader({
 // ── CaptureView ───────────────────────────────────────────────────────────
 
 export function CaptureView() {
-  const [showWizard, setShowWizard] = useState(false);
+  const [showWizard, setShowWizard] = useState(sharedCaptureUiState.showWizard);
+  const [detectError, setDetectError] = useState<string | null>(
+    sharedCaptureUiState.detectError,
+  );
+  const workspaceVariant = useWorkspaceVariantStore((s) => s.variant);
+  const activeView = useViewportStore((s) => s.activeView);
+  const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
+  const archScanName = useImportStore((s) => s.archScanName);
+  const stage = getCaseWorkflowStage(activeView);
+  const hasPhotos = uploadedPhotos.length > 0;
+  const hasScan = Boolean(archScanName);
+  const isAlignStage = stage === "align";
+  const isGuidedVariant = workspaceVariant === "guided";
+  const isActiveCaptureStage = stage === "import" || stage === "align";
+  const guidanceMessage = isAlignStage
+    ? hasPhotos && hasScan
+      ? "Refine the landmark match, then continue into Design when the overlay looks believable."
+      : "Bring in both the patient photo and arch scan so alignment can be calibrated."
+    : hasPhotos || hasScan
+      ? "Complete the missing asset so the case can move into alignment."
+      : "Upload a patient photo or arch scan to start the case.";
+
+  useEffect(() => {
+    const wasOpen = sharedCaptureUiState.showWizard;
+    if (showWizard && !wasOpen) {
+      recordAlignmentAttempt("import");
+    }
+  }, [showWizard]);
+
+  useEffect(() => {
+    sharedCaptureUiState.showWizard = showWizard;
+  }, [showWizard]);
+
+  useEffect(() => {
+    sharedCaptureUiState.detectError = detectError;
+  }, [detectError]);
+
+  useEffect(() => {
+    setShowWizard(sharedCaptureUiState.showWizard);
+    setDetectError(sharedCaptureUiState.detectError);
+  }, [activeView]);
 
   return (
     <div
@@ -316,7 +395,50 @@ export function CaptureView() {
       <CaptureStageHeader
         showWizard={showWizard}
         onToggleWizard={() => setShowWizard((v) => !v)}
+        detectError={detectError}
+        setDetectError={setDetectError}
       />
+
+      {isGuidedVariant && isActiveCaptureStage && (
+        <div className="guided-stage-panel" data-testid="guided-context-panel">
+          <div className="guided-stage-panel__header">
+            <div>
+              <div className="guided-stage-panel__eyebrow">Recommended next</div>
+              <div className="guided-stage-panel__title">
+                {isAlignStage ? "Calibrate the overlay" : "Finish the intake set"}
+              </div>
+            </div>
+            <div className="guided-stage-panel__status">
+              <span
+                className={`guided-stage-chip ${hasPhotos ? "is-ready" : "is-pending"}`}
+              >
+                {hasPhotos ? "Photo ready" : "Photo needed"}
+              </span>
+              <span
+                className={`guided-stage-chip ${hasScan ? "is-ready" : "is-pending"}`}
+              >
+                {hasScan ? "Scan ready" : "Scan needed"}
+              </span>
+            </div>
+          </div>
+          <p className="guided-stage-panel__body">{guidanceMessage}</p>
+          <div
+            className="guided-stage-panel__status"
+            data-testid="guided-import-readiness"
+          >
+            <span
+              className={`guided-stage-chip ${hasPhotos ? "is-ready" : "is-pending"}`}
+            >
+              {hasPhotos ? "Photo ready" : "Photo needed"}
+            </span>
+            <span
+              className={`guided-stage-chip ${hasScan ? "is-ready" : "is-pending"}`}
+            >
+              {hasScan ? "Scan ready" : "Scan needed"}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Main content — no side panel split needed */}
       <div style={{ flex: 1, overflow: "auto", minWidth: 0 }}>

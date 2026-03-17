@@ -58,7 +58,7 @@ export function CollaborateView() {
   if (!caseRecord) {
     return (
       <StageBlockerScreen
-        stage="collaborate"
+        stage="present"
         reason="Open or create a case before collaborating with your team."
         actionLabel="Go to Cases"
         onAction={() => setActiveView("cases")}

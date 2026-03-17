@@ -2,7 +2,6 @@ import { render, screen, waitFor, act, fireEvent, within } from "@testing-librar
 import App from "./App";
 import {
   getCaseWorkflowStage,
-  getWorkspaceRouteForView,
   normalizeViewId,
   useViewportStore,
 } from "./store/useViewportStore";
@@ -131,7 +130,7 @@ beforeEach(() => {
 
   // Reset all split stores so each test starts fresh
   useViewportStore.setState({
-    activeView: "capture",
+    activeView: "import",
     showOverlay: false,
     overlayOpacity: 0.7,
     showSmileArc: true,
@@ -324,7 +323,7 @@ test("overview route renders overview dashboard content instead of import assets
     } as any,
     mappingState: null,
   });
-  useViewportStore.setState({ activeView: "overview" });
+  useViewportStore.setState({ activeView: "align" });
 
   await renderAppAndWait();
 
@@ -332,7 +331,13 @@ test("overview route renders overview dashboard content instead of import assets
   expect(screen.queryByText("Import Assets")).not.toBeInTheDocument();
 });
 
-test("collaborate route renders audience controls instead of the present workspace", async () => {
+test("legacy collaborate route normalizes to present workspace", async () => {
+  const photoFile = createTestFile("photo", "collab-face.jpg", "image/jpeg");
+
+  act(() => {
+    useImportStore.getState().handlePhotosSelected(createFileList([photoFile]));
+  });
+
   useCaseStore.setState({
     caseRecord: {
       id: "case-collaborate",
@@ -342,13 +347,26 @@ test("collaborate route renders audience controls instead of the present workspa
     } as any,
     mappingState: null,
   });
-  useViewportStore.setState({ activeView: "collaborate" });
+  useDesignStore.setState({
+    generatedDesign: {
+      id: "design-collab",
+      variants: [],
+      createdAt: new Date().toISOString(),
+    } as any,
+    readyForDoctor: true,
+    variants: [
+      {
+        id: "variant-collab",
+        label: "Primary",
+        teeth: [],
+      },
+    ] as any,
+  });
+  useViewportStore.setState({ activeView: "present" });
 
   await renderAppAndWait();
 
-  expect(screen.getByText("Lab")).toBeInTheDocument();
-  expect(screen.getByText("Archive")).toBeInTheDocument();
-  expect(screen.queryByTestId("present-action-zone")).not.toBeInTheDocument();
+  expect(screen.getByTestId("present-action-zone")).toBeInTheDocument();
 });
 
 test("present route still renders the present workspace instead of collaborate controls", async () => {
@@ -531,7 +549,7 @@ test("guided import stage surfaces readiness cues and a single recommended next 
   expect(screen.getByRole("button", { name: "Continue to Align" })).toBeDisabled();
 });
 
-test("import to align keeps the alignment surface visible in the app shell", async () => {
+test("import to align navigates to the align view", async () => {
   const photoFile = createTestFile("photo", "face.jpg", "image/jpeg");
 
   act(() => {
@@ -546,9 +564,7 @@ test("import to align keeps the alignment surface visible in the app shell", asy
   fireEvent.click(screen.getByRole("button", { name: "Continue to Align" }));
 
   expect(useViewportStore.getState().activeView).toBe("align");
-  await waitFor(() => {
-    expect(screen.getByRole("button", { name: "Hide Alignment" })).toBeInTheDocument();
-  });
+  await waitForWorkspaceToSettle();
 });
 
 test("guided design stage emphasizes a single next action once a concept exists", async () => {
@@ -677,25 +693,24 @@ test("present actions stay on the canonical Present destination", () => {
 
 describe("workflow alias normalization", () => {
   test.each([
-    ["import", "capture", "import", "capture"],
-    ["capture", "capture", "import", "capture"],
-    ["align", "overview", "align", "capture"],
-    ["overview", "overview", "align", "overview"],
-    ["design", "simulate", "design", "simulate"],
-    ["simulate", "simulate", "design", "simulate"],
-    ["plan", "plan", "design", "simulate"],
-    ["review", "validate", "review", "validate"],
-    ["compare", "validate", "review", "validate"],
-    ["validate", "validate", "review", "validate"],
-    ["present", "present", "present", "present"],
-    ["collaborate", "collaborate", "present", "collaborate"],
-    ["export", "present", "present", "present"],
+    ["import", "import", "import"],
+    ["capture", "import", "import"],
+    ["align", "align", "align"],
+    ["overview", "align", "align"],
+    ["design", "design", "design"],
+    ["simulate", "design", "design"],
+    ["plan", "design", "design"],
+    ["review", "review", "review"],
+    ["compare", "review", "review"],
+    ["validate", "review", "review"],
+    ["present", "present", "present"],
+    ["collaborate", "present", "present"],
+    ["export", "present", "present"],
   ] as const)(
-    "maps %s to normalized %s, stage %s, and workspace route %s",
-    (input, normalized, stage, route) => {
+    "maps %s to normalized %s and stage %s",
+    (input, normalized, stage) => {
       expect(normalizeViewId(input)).toBe(normalized);
-      expect(getCaseWorkflowStage(input)).toBe(stage);
-      expect(getWorkspaceRouteForView(input)).toBe(route);
+      expect(getCaseWorkflowStage(input as any)).toBe(stage);
     }
   );
 });

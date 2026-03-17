@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useImportStore } from "../../store/useImportStore";
 import { useSidecarStore } from "../../store/useSidecarStore";
@@ -24,6 +24,23 @@ vi.mock("../../features/overlay/PhotoOverlay", () => ({
   PhotoOverlay: () => <div data-testid="photo-overlay">Photo Overlay Mock</div>,
 }));
 
+vi.mock("../capture/AlignmentScanViewer", () => ({
+  AlignmentScanViewer: ({
+    onPickPoint,
+    isPicking,
+  }: {
+    onPickPoint: (p: { x: number; y: number; z: number }) => void;
+    isPicking: boolean;
+  }) => (
+    <button
+      data-testid="scan-pick-btn"
+      onClick={() => isPicking && onPickPoint({ x: 4, y: 0, z: 0 })}
+    >
+      Mock Scan
+    </button>
+  ),
+}));
+
 vi.mock("@react-three/fiber", () => ({
   Canvas: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   useFrame: vi.fn(),
@@ -32,6 +49,7 @@ vi.mock("@react-three/fiber", () => ({
 
 vi.mock("@react-three/drei", () => ({
   OrbitControls: () => null,
+  TrackballControls: () => null,
   PerspectiveCamera: () => null,
   Grid: () => null,
   Environment: () => null,
@@ -49,27 +67,66 @@ vi.mock("idb-keyval", () => ({
 }));
 
 // Helper: set sidecar state directly
+const MOCK_ARCH_SCAN_MESH = {
+  name: "test.stl",
+  bounds: {
+    minX: -30, maxX: 30, minY: -20, maxY: 20,
+    minZ: -5, maxZ: 5,
+    width: 60, depth: 40, height: 10,
+  },
+  vertexCount: 3,
+  triangles: [
+    { a: { x: 0, y: 0, z: 0 }, b: { x: 1, y: 0, z: 0 }, c: { x: 0, y: 1, z: 0 } },
+  ],
+};
+
+const MOCK_RECT: DOMRect = {
+  left: 100,
+  top: 200,
+  width: 400,
+  height: 300,
+  right: 500,
+  bottom: 500,
+  x: 100,
+  y: 200,
+  toJSON: () => ({}),
+};
+
+function mockRect() {
+  return vi
+    .spyOn(Element.prototype, "getBoundingClientRect")
+    .mockReturnValue(MOCK_RECT);
+}
+
 function setSidecarReady() {
-  useSidecarStore.setState({ sidecarState: "ready" });
+  act(() => {
+    useSidecarStore.setState({ sidecarState: "ready" });
+  });
 }
 
 function setSidecarStarting() {
-  useSidecarStore.setState({ sidecarState: "starting" });
+  act(() => {
+    useSidecarStore.setState({ sidecarState: "starting" });
+  });
 }
 
 function setSidecarUnavailable() {
-  useSidecarStore.setState({ sidecarState: "unavailable" });
+  act(() => {
+    useSidecarStore.setState({ sidecarState: "unavailable" });
+  });
 }
 
 // Helper: inject a fake uploaded photo into import store
 function injectPhoto() {
-  useImportStore.setState({
-    uploadedPhotos: [
-      {
-        name: "test.jpg",
-        url: "blob:http://localhost/test-photo",
-      },
-    ],
+  act(() => {
+    useImportStore.setState({
+      uploadedPhotos: [
+        {
+          name: "test.jpg",
+          url: "blob:http://localhost/test-photo",
+        },
+      ],
+    });
   });
 }
 
@@ -91,9 +148,12 @@ function makeLandmarkResult() {
 
 beforeEach(() => {
   // Reset all stores to clean state
-  useImportStore.getState().clearAll();
-  useSidecarStore.setState({ sidecarState: "starting" });
-  useViewportStore.getState().clearAlignmentMarkers();
+  act(() => {
+    useImportStore.getState().clearAll();
+    useSidecarStore.setState({ sidecarState: "starting" });
+    useViewportStore.getState().clearAlignmentMarkers();
+    useViewportStore.setState({ activeView: "import" });
+  });
   vi.clearAllMocks();
 
   // Stub fetch for blob URL reads
@@ -130,6 +190,116 @@ describe("Auto-detect button disabled states", () => {
     render(<CaptureView />);
     const btn = screen.getByRole("button", { name: /vision offline/i });
     expect(btn).toBeDisabled();
+  });
+});
+
+describe("collapsed import and align workflow framing", () => {
+  it("shows Import framing by default when the import view is active", () => {
+    act(() => {
+      useViewportStore.setState({ activeView: "import" });
+    });
+
+    render(<CaptureView />);
+
+    expect(screen.getByText(/^Import$/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /continue to align/i })).toBeInTheDocument();
+  });
+
+  it("shows Align framing when the align view is active", () => {
+    act(() => {
+      useViewportStore.setState({ activeView: "align" });
+    });
+
+    render(<CaptureView />);
+
+    expect(screen.getByText(/^Align$/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /continue to design/i })).toBeInTheDocument();
+  });
+
+  it("enables Import progression when either a photo or scan is available", () => {
+    act(() => {
+      useViewportStore.setState({ activeView: "import" });
+      useImportStore.setState({
+        uploadedPhotos: [{ name: "smile.jpg", url: "blob:smile" }],
+        archScanName: undefined,
+      });
+    });
+
+    render(<CaptureView />);
+
+    expect(screen.getByRole("button", { name: /continue to align/i })).toBeEnabled();
+
+    act(() => {
+      useImportStore.setState({
+        uploadedPhotos: [],
+        archScanName: "arch.stl",
+      });
+    });
+
+    expect(screen.getByRole("button", { name: /continue to align/i })).toBeEnabled();
+  });
+
+  it("keeps Align progression disabled until both photo and scan are available", () => {
+    act(() => {
+      useViewportStore.setState({ activeView: "align" });
+      useImportStore.setState({
+        uploadedPhotos: [{ name: "smile.jpg", url: "blob:smile" }],
+        archScanName: undefined,
+      });
+    });
+
+    render(<CaptureView />);
+
+    expect(screen.getByRole("button", { name: /continue to design/i })).toBeDisabled();
+
+    act(() => {
+      useImportStore.setState({
+        uploadedPhotos: [],
+        archScanName: "arch.stl",
+      });
+    });
+
+    expect(screen.getByRole("button", { name: /continue to design/i })).toBeDisabled();
+
+    act(() => {
+      useImportStore.setState({
+        uploadedPhotos: [{ name: "smile.jpg", url: "blob:smile" }],
+        archScanName: "arch.stl",
+      });
+    });
+
+    expect(screen.getByRole("button", { name: /continue to design/i })).toBeEnabled();
+  });
+
+  it("preserves the real wizard phase when moving from Import to Align", async () => {
+    mockRect();
+    act(() => {
+      useViewportStore.setState({ activeView: "import" });
+      useImportStore.setState({
+        uploadedPhotos: [{ name: "smile.jpg", url: "blob:smile" }],
+        archScanMesh: MOCK_ARCH_SCAN_MESH as any,
+        archScanName: "arch.stl",
+      });
+    });
+
+    render(<CaptureView />);
+
+    await userEvent.click(screen.getByRole("button", { name: /align photo/i }));
+    const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
+    act(() => {
+      fireEvent.click(canvas, { clientX: 300, clientY: 350 });
+      fireEvent.click(canvas, { clientX: 260, clientY: 350 });
+    });
+    await userEvent.click(screen.getByTestId("next-btn"));
+
+    expect(screen.getByTestId("scan-pick-btn")).toBeInTheDocument();
+
+    act(() => {
+      useViewportStore.setState({ activeView: "align" });
+    });
+
+    expect(screen.getByText(/^Align$/)).toBeInTheDocument();
+    expect(screen.getByTestId("scan-pick-btn")).toBeInTheDocument();
   });
 });
 

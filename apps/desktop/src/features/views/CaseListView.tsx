@@ -1,17 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
 import { listCases, deleteCase, type SavedCaseSummary } from "../../services/caseDb";
 import { useCaseStore } from "../../store/useCaseStore";
-import { useViewportStore } from "../../store/useViewportStore";
 
 // ── Stage progress mapping ────────────────────────────────────────────────────
 
 const CLINICAL_STAGES = [
-  { id: "capture", label: "Capture" },
-  { id: "simulate", label: "Simulate" },
-  { id: "plan", label: "Plan" },
-  { id: "validate", label: "Validate" },
+  { id: "import", label: "Import" },
+  { id: "align", label: "Align" },
+  { id: "design", label: "Design" },
+  { id: "review", label: "Review" },
   { id: "present", label: "Present" },
-  { id: "collaborate", label: "Collaborate" },
 ] as const;
 
 /** Maps legacy workflowState values to how many pipeline stages are complete */
@@ -189,15 +187,13 @@ export function CaseListView() {
   };
 
   /**
-   * Load the case then always land on Overview — the clinical workflow hub.
-   * loadCaseFromDB navigates based on design state; we override to overview
-   * so the user sees the full stage progress map before diving into a step.
+   * Load the case and let the store choose the canonical workspace stage
+   * based on the saved case readiness.
    */
   const handleOpenCase = async (id: string) => {
     setOpeningId(id);
     try {
       await useCaseStore.getState().loadCaseFromDB(id);
-      useViewportStore.getState().setActiveView("overview");
     } finally {
       setOpeningId(null);
     }

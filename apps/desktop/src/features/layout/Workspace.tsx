@@ -8,7 +8,7 @@ import {
 } from "react";
 import type { ViewId } from "../../store/useViewportStore";
 import {
-  getWorkspaceRouteForView,
+  normalizeViewId,
   useViewportStore,
 } from "../../store/useViewportStore";
 // ── Core views ─────────────────────────────────────────────────────────────
@@ -31,11 +31,6 @@ const SimulateView = lazy(async () => {
   return { default: mod.SimulateView };
 });
 
-const PlanView = lazy(async () => {
-  const mod = await import("../views/PlanView");
-  return { default: mod.PlanView };
-});
-
 const ValidateView = lazy(async () => {
   const mod = await import("../views/ValidateView");
   return { default: mod.ValidateView };
@@ -46,32 +41,18 @@ const PresentView = lazy(async () => {
   return { default: mod.PresentView };
 });
 
-const CollaborateView = lazy(async () => {
-  const mod = await import("../views/CollaborateView");
-  return { default: mod.CollaborateView };
-});
-
 interface WorkspaceProps {
   activeView: ViewId;
 }
 
-type LazyWorkspaceRoute =
-  | "overview"
-  | "capture"
-  | "simulate"
-  | "plan"
-  | "validate"
-  | "present"
-  | "collaborate";
+type LazyWorkspaceRoute = "import" | "align" | "design" | "review" | "present";
 
 const LAZY_WORKSPACE_ROUTES: LazyWorkspaceRoute[] = [
-  "overview",
-  "capture",
-  "simulate",
-  "plan",
-  "validate",
+  "import",
+  "align",
+  "design",
+  "review",
   "present",
-  "collaborate",
 ];
 
 const LAZY_WORKSPACE_ROUTE_SET = new Set<ViewId>(LAZY_WORKSPACE_ROUTES);
@@ -109,11 +90,11 @@ function WorkspaceLoadingFallback() {
  * suppressed. The Canvas RAF loop pauses automatically and resumes when the
  * view becomes visible again.
  *
- * Legacy view IDs ("import", "design", "compare", "export") are mapped to
- * their modern equivalents to support any persisted navigation state.
+ * Legacy view IDs ("capture", "simulate", "validate", etc.) are mapped to
+ * their canonical equivalents to support any persisted navigation state.
  */
 export function Workspace({ activeView }: WorkspaceProps) {
-  const resolved = getWorkspaceRouteForView(activeView);
+  const resolved = normalizeViewId(activeView);
   const [mountedRoutes, setMountedRoutes] = useState<Set<ViewId>>(
     () => new Set(LAZY_WORKSPACE_ROUTE_SET.has(resolved) ? [resolved] : [])
   );
@@ -182,13 +163,11 @@ export function Workspace({ activeView }: WorkspaceProps) {
       </div>
 
       {/* ── Workflow stages ── */}
-      {renderLazyRoute("overview", "Align", OverviewView)}
-      {renderLazyRoute("capture", "Import", CaptureView)}
-      {renderLazyRoute("simulate", "Design", SimulateView)}
-      {renderLazyRoute("plan", "Design Planning", PlanView)}
-      {renderLazyRoute("validate", "Review", ValidateView)}
+      {renderLazyRoute("import", "Import", CaptureView)}
+      {renderLazyRoute("align", "Align", OverviewView)}
+      {renderLazyRoute("design", "Design", SimulateView)}
+      {renderLazyRoute("review", "Review", ValidateView)}
       {renderLazyRoute("present", "Present", PresentView)}
-      {renderLazyRoute("collaborate", "Collaborate", CollaborateView)}
 
       {/* ── Utility ── */}
       <div

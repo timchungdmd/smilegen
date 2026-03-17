@@ -1,7 +1,7 @@
 /**
- * ValidateView — Design validation before presentation.
+ * ValidateView — Review workspace before presentation.
  *
- * Stage 5 in the clinical workflow. Four tabs:
+ * Review is the fourth case job. Four tabs:
  *
  *  1. Comparison  — Side-by-side before/after with CompareView
  *  2. Measurements — Tooth proportions, golden ratio checks
@@ -17,11 +17,16 @@
  * Currently: structural scaffold with all four tab panels.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDesignStore } from "../../store/useDesignStore";
-import { useViewportStore } from "../../store/useViewportStore";
+import {
+  getCaseWorkflowStage,
+  useViewportStore,
+} from "../../store/useViewportStore";
 import { StageBlockerScreen } from "../workflow/StageBlockerScreen";
 import { CompareView } from "./CompareView";
+import { useWorkspaceVariantStore } from "../experiments/workspaceVariantStore";
+import { recordReviewApproval } from "../experiments/workspaceMetrics";
 
 // ── Tab types ─────────────────────────────────────────────────────────────
 
@@ -89,7 +94,7 @@ function MeasurementsTab() {
   if (!activeVariant) {
     return (
       <div style={{ padding: 24, color: "var(--text-muted, #8892a0)", fontSize: 13 }}>
-        Generate a design in Plan to see tooth measurements.
+        Generate a design in Design to see tooth measurements.
       </div>
     );
   }
@@ -257,7 +262,7 @@ function ApprovalsTab() {
     <div style={{ flex: 1, padding: "24px", display: "flex", flexDirection: "column", gap: 20 }}>
       <div>
         <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--text-primary, #e8eaf0)", margin: "0 0 6px" }}>
-          Design Approval
+          Review Approval
         </h2>
         <p style={{ fontSize: 12, color: "var(--text-muted, #8892a0)", margin: 0 }}>
           Mark the design as ready for doctor review. This allows the patient presentation to proceed.
@@ -360,15 +365,32 @@ function ApprovalsTab() {
 export function ValidateView() {
   const [activeTab, setActiveTab] = useState<ValidateTab>("comparison");
   const generatedDesign = useDesignStore((s) => s.generatedDesign);
+  const readyForDoctor = useDesignStore((s) => s.readyForDoctor);
+  const activeView = useViewportStore((s) => s.activeView);
   const setActiveView = useViewportStore((s) => s.setActiveView);
+  const workspaceVariant = useWorkspaceVariantStore((s) => s.variant);
+  const isActiveReviewStage = getCaseWorkflowStage(activeView) === "review";
+  const hasRecordedApprovalRef = useRef(false);
+
+  useEffect(() => {
+    if (readyForDoctor && !hasRecordedApprovalRef.current) {
+      recordReviewApproval();
+      hasRecordedApprovalRef.current = true;
+      return;
+    }
+
+    if (!readyForDoctor) {
+      hasRecordedApprovalRef.current = false;
+    }
+  }, [readyForDoctor]);
 
   if (!generatedDesign) {
     return (
       <StageBlockerScreen
-        stage="validate"
-        reason="Generate a smile design in Plan before validating."
-        actionLabel="Go to Plan"
-        onAction={() => setActiveView("plan")}
+        stage="review"
+        reason="Generate a smile design in Design before reviewing."
+        actionLabel="Go to Design"
+        onAction={() => setActiveView("design")}
       />
     );
   }
@@ -404,9 +426,37 @@ export function ValidateView() {
             color: "var(--text-muted, #8892a0)",
           }}
         >
-          Validate
+          Review
         </span>
       </div>
+
+      {workspaceVariant === "guided" && isActiveReviewStage && (
+        <div className="guided-stage-panel" data-testid="guided-context-panel">
+          <div className="guided-stage-panel__header">
+            <div>
+              <div className="guided-stage-panel__eyebrow">
+                {readyForDoctor ? "Ready for present" : "Recommended next"}
+              </div>
+              <div className="guided-stage-panel__title">
+                {readyForDoctor ? "Transition into Present" : "Complete the clinical review"}
+              </div>
+            </div>
+            <div className="guided-stage-panel__status">
+              <span className="guided-stage-chip is-ready">Concept ready</span>
+              <span
+                className={`guided-stage-chip ${readyForDoctor ? "is-ready" : "is-pending"}`}
+              >
+                {readyForDoctor ? "Doctor ready" : "Approval needed"}
+              </span>
+            </div>
+          </div>
+          <p className="guided-stage-panel__body">
+            {readyForDoctor
+              ? "The proposal is approved. Move into Present to share the patient-facing view."
+              : "Use comparison, measurements, and approval checks to decide whether the proposal is ready to present."}
+          </p>
+        </div>
+      )}
 
       <TabRail active={activeTab} onChange={setActiveTab} />
 

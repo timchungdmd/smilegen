@@ -1,7 +1,8 @@
 /**
- * PlanView — Treatment planning with three sequential substeps.
+ * PlanView — Legacy planning workspace retained behind the Design job.
  *
- * Stage 4 in the clinical workflow. Houses three sub-screens:
+ * This route remains available for backward compatibility when legacy
+ * navigation lands on `plan`, but it is conceptually absorbed into Design.
  *
  *  1. Stack   — Tooth count, arch selection, treatment type assignment
  *  2. Structure — Arch curve parameters, proportions, additive bias
@@ -194,7 +195,7 @@ function StackSubstep() {
           Generate Design
         </button>
         <button
-          onClick={() => setActiveView("simulate")}
+          onClick={() => setActiveView("design")}
           style={{
             padding: "10px 16px",
             background: "var(--bg-tertiary, #252b38)",
@@ -401,10 +402,10 @@ export function PlanView() {
   if (!hasCapture) {
     return (
       <StageBlockerScreen
-        stage="plan"
+        stage="design"
         reason="Import patient photos or a 3D arch scan before planning the design."
-        actionLabel="Go to Capture"
-        onAction={() => setActiveView("capture")}
+        actionLabel="Go to Import"
+        onAction={() => setActiveView("import")}
       />
     );
   }
@@ -444,7 +445,7 @@ export function PlanView() {
         </span>
         {hasVariants && (
           <button
-            onClick={() => setActiveView("validate")}
+            onClick={() => setActiveView("review")}
             style={{
               display: "flex",
               alignItems: "center",
@@ -459,7 +460,7 @@ export function PlanView() {
               cursor: "pointer",
             }}
           >
-            Proceed to Validate
+            Proceed to Review
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
               <path d="M8 5v14l11-7z" />
             </svg>

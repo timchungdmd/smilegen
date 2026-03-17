@@ -160,7 +160,7 @@ export function OverviewView() {
   if (!caseRecord) {
     return (
       <StageBlockerScreen
-        stage="overview"
+        stage="align"
         reason="Open or create a case to see its overview."
         actionLabel="Go to Cases"
         onAction={() => setActiveView("cases")}
