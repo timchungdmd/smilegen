@@ -487,6 +487,7 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
   const archHalfWidthOverride = useDesignStore((s) => s.archHalfWidthOverride);
   const moveTooth = useDesignStore((s) => s.moveTooth);
   const gimbalMode = useViewportStore((s) => s.gimbalMode);
+  const hiddenLayers = useViewportStore((s) => s.hiddenLayers);
 
   // Photo-in-3D overlay state
   const showPhotoIn3D = useViewportStore((s) => s.showPhotoIn3D);
@@ -517,6 +518,8 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
   useEffect(() => {
     setPhotoBgAspect(null);
   }, [photoUrl]);
+
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const [animTarget, setAnimTarget] = useState<{
     pos: THREE.Vector3;
@@ -600,7 +603,22 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
   // becomes available (fixing the race condition).
 
   return (
-    <div ref={containerRef} className="viewer-container" tabIndex={0} style={{ flex: 1, position: "relative" }}>
+    <div
+      ref={containerRef}
+      className="viewer-container"
+      tabIndex={0}
+      style={{ flex: 1, position: "relative" }}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setContextMenu({ x: e.clientX, y: e.clientY });
+      }}
+      onClick={() => contextMenu && setContextMenu(null)}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && contextMenu) {
+          setContextMenu(null);
+        }
+      }}
+    >
 
       {/* Gate: only create the WebGL canvas when this container is painted.
           The Workspace keep-alive pattern hides inactive views with display:none;
@@ -612,6 +630,34 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
         </div>
       ) : (
       <>
+
+      {/* Smile Window — persistent photo reference during 3D work */}
+      {photoUrl && !showPhotoIn3D && (
+        <div
+          style={{
+            position: "absolute",
+            top: 12,
+            left: 12,
+            width: 180,
+            height: 120,
+            borderRadius: 8,
+            overflow: "hidden",
+            border: "1px solid rgba(255,255,255,0.12)",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+            zIndex: 10,
+            cursor: "pointer",
+            background: "#000",
+          }}
+          title="Click to toggle photo overlay"
+          onClick={() => useViewportStore.getState().setShowPhotoIn3D(true)}
+        >
+          <img
+            src={photoUrl}
+            alt="Patient photo"
+            style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.9 }}
+          />
+        </div>
+      )}
 
       {/* ── Photo background ────────────────────────────────────────────────────
           Patient photo is rendered as a CSS img BEHIND the transparent WebGL
@@ -671,7 +717,7 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
           controlsRef={controlsRef}
         />
 
-        {archScanMesh && (
+        {archScanMesh && !hiddenLayers.has("arch-scan") && (
           <StlMeshView
             mesh={archScanMesh}
             color="#5c7480"
@@ -681,7 +727,7 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
           />
         )}
 
-        {activeVariant?.teeth.map((tooth) => (
+        {!hiddenLayers.has("design-teeth") && activeVariant?.teeth.map((tooth) => (
           <GimbalTooth
             key={tooth.toothId}
             tooth={tooth}
@@ -701,14 +747,14 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
           </GimbalTooth>
         ))}
 
-        {activeVariant && (
+        {activeVariant && !hiddenLayers.has("arch-curve") && (
           <ArchCurveWireframe
             archHalfWidth={archHalfWidthOverride ?? (archScanMesh ? Math.max(20, Math.min(50, archScanMesh.bounds.width / 2)) : 35)}
             archDepth={archDepthOverride ?? (archScanMesh ? Math.max(8, Math.min(25, (archScanMesh.bounds.maxY - archScanMesh.bounds.minY) * 0.5)) : 15)}
           />
         )}
 
-        {!hasContent && (
+        {!hasContent && !hiddenLayers.has("grid") && (
           <Grid
             args={[40, 40]}
             position={[0, -0.01, 0]}
@@ -745,6 +791,56 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
           />
         </GizmoHelper>
       </Canvas>
+
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <div
+          style={{
+            position: "fixed",
+            top: contextMenu.y,
+            left: contextMenu.x,
+            background: "rgba(15, 20, 25, 0.95)",
+            backdropFilter: "blur(12px)",
+            borderRadius: 8,
+            padding: "4px 0",
+            minWidth: 180,
+            zIndex: 100,
+            border: "1px solid rgba(255,255,255,0.1)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {[
+            { label: "Reset View", action: resetView },
+            { label: "Front", action: () => goToPreset(CAMERA_PRESETS[0]) },
+            { label: "Back", action: () => goToPreset(CAMERA_PRESETS[1]) },
+            { label: "Top", action: () => goToPreset(CAMERA_PRESETS[2]) },
+            { label: "3/4 View", action: () => goToPreset(CAMERA_PRESETS[6]) },
+            ...(scanReferencePoints && archScanMesh ? [{ label: "Align to Photo", action: goToPhotoView }] : []),
+            ...(showPhotoIn3D ? [{ label: "Hide Photo Overlay", action: () => useViewportStore.getState().setShowPhotoIn3D(false) }] : photoUrl ? [{ label: "Show Photo Overlay", action: () => useViewportStore.getState().setShowPhotoIn3D(true) }] : []),
+          ].map((item, i) => (
+            <button
+              key={i}
+              onClick={() => { item.action(); setContextMenu(null); }}
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "6px 14px",
+                background: "none",
+                border: "none",
+                color: "var(--text-primary)",
+                fontSize: 12,
+                textAlign: "left",
+                cursor: "pointer",
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
+              onMouseOut={(e) => { e.currentTarget.style.background = "none"; }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Floating photo overlay controls */}
       {showPhotoIn3D && (

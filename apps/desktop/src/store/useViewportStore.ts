@@ -1,290 +1,170 @@
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
+/**
+ * useViewportStore — backward-compatibility facade.
+ *
+ * The monolithic viewport store has been split into four focused stores:
+ *   - useNavigationStore  (activeView, navigation types/helpers)
+ *   - useOverlayStore     (overlay toggles, guides, alignment markers)
+ *   - useAlignmentStore   (photo-in-3D, scan reference points)
+ *   - useCanvasStore      (photo zoom/pan, camera, design tab, gimbal)
+ *
+ * This file re-exports all types/helpers for backward compatibility
+ * and provides a combined `useViewportStore` hook that merges all four
+ * stores so existing `useViewportStore((s) => s.field)` calls keep working.
+ *
+ * New code should import from the specific stores directly.
+ */
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+import { useNavigationStore } from "./useNavigationStore";
+import { useOverlayStore } from "./useOverlayStore";
+import { useAlignmentStore } from "./useAlignmentStore";
+import { useCanvasStore } from "./useCanvasStore";
+import { normalizeViewId } from "./useNavigationStore";
+
+// ─── Re-export types ─────────────────────────────────────────────────────────
+
+export type {
+  ViewId,
+  CaseWorkflowStage,
+} from "./useNavigationStore";
+
+export type {
+  AlignmentMarkerType,
+  AlignmentMarker,
+} from "./useOverlayStore";
+
+export type {
+  ScanReferencePoint,
+  ScanReferencePoints,
+} from "./useAlignmentStore";
+
+export type {
+  DesignTab,
+} from "./useCanvasStore";
+
+export {
+  normalizeViewId,
+  getCaseWorkflowStage,
+  LEGACY_VIEW_MAP,
+} from "./useNavigationStore";
+
+// Re-export the individual stores for explicit usage
+export { useNavigationStore } from "./useNavigationStore";
+export { useOverlayStore } from "./useOverlayStore";
+export { useAlignmentStore } from "./useAlignmentStore";
+export { useCanvasStore } from "./useCanvasStore";
+
+// ─── Combined state type ─────────────────────────────────────────────────────
+
+type CombinedState = ReturnType<typeof useNavigationStore.getState> &
+  ReturnType<typeof useOverlayStore.getState> &
+  ReturnType<typeof useAlignmentStore.getState> &
+  ReturnType<typeof useCanvasStore.getState> & {
+    resetViewport: () => void;
+  };
+
+// ─── Combined getState ───────────────────────────────────────────────────────
+
+function enhancedSetActiveView(view: import("./useNavigationStore").ViewId): void {
+  if (normalizeViewId(view) === "design" && useAlignmentStore.getState().scanReferencePoints) {
+    useAlignmentStore.getState().setShowPhotoIn3D(true);
+  }
+  useNavigationStore.getState().setActiveView(view);
+}
+
+function getCombinedState(): CombinedState {
+  return {
+    ...useNavigationStore.getState(),
+    ...useOverlayStore.getState(),
+    ...useAlignmentStore.getState(),
+    ...useCanvasStore.getState(),
+    setActiveView: enhancedSetActiveView,
+    resetViewport: resetAllStores,
+  };
+}
+
+function resetAllStores(): void {
+  useNavigationStore.getState().resetNavigation();
+  useOverlayStore.getState().resetOverlay();
+  useAlignmentStore.getState().resetAlignment();
+  useCanvasStore.getState().resetCanvas();
+}
+
+// ─── Combined hook ───────────────────────────────────────────────────────────
 
 /**
- * Workflow-first navigation IDs.
- *
- * Primary case jobs:
- *   import → align → design → review → present
- *
- * Backing workspace routes kept for compatibility:
- *   capture (import/align), overview (case hub), simulate/plan (design),
- *   validate (review), present (present), collaborate (team handoff)
- *
- * Utility views:
- *   cases, settings
+ * @deprecated Import from useNavigationStore, useOverlayStore, useAlignmentStore,
+ * or useCanvasStore instead. This combined hook re-renders on ANY change across
+ * all four stores.
  */
-export type ViewId =
-  | "cases"
-  | "import"
-  | "align"
-  | "design"
-  | "review"
-  | "present"
-  | "settings";
+function useViewportStoreHook(): CombinedState;
+function useViewportStoreHook<T>(selector: (state: CombinedState) => T): T;
+function useViewportStoreHook<T>(selector?: (state: CombinedState) => T): T | CombinedState {
+  // Subscribe to all four stores so any change triggers re-render
+  const nav = useNavigationStore();
+  const overlay = useOverlayStore();
+  const alignment = useAlignmentStore();
+  const canvas = useCanvasStore();
 
-/** Maps legacy route-based ViewId values to their canonical workflow stage names */
-export const LEGACY_VIEW_MAP: Record<string, ViewId> = {
-  capture: "import",
-  overview: "align",
-  simulate: "design",
-  plan: "design",
-  validate: "review",
-  collaborate: "present",
-  compare: "review",
-  export: "present",
-};
+  const combined: CombinedState = {
+    ...nav,
+    ...overlay,
+    ...alignment,
+    ...canvas,
+    // Override setActiveView to keep the auto-enable-photo-in-3D logic
+    setActiveView: enhancedSetActiveView,
+    resetViewport: resetAllStores,
+  };
 
-/** Normalise a ViewId, resolving any legacy alias to its canonical equivalent */
-export function normalizeViewId(id: string): ViewId {
-  return (LEGACY_VIEW_MAP[id] as ViewId) ?? (id as ViewId);
+  if (selector) {
+    return selector(combined);
+  }
+  return combined;
 }
 
-export type CaseWorkflowStage = "import" | "align" | "design" | "review" | "present";
+export const useViewportStore = Object.assign(useViewportStoreHook, {
+  getState: getCombinedState,
+  setState: (partial: Partial<CombinedState>) => {
+    // Distribute state updates to the appropriate stores
+    const navKeys = new Set(["activeView"]);
+    const overlayKeys = new Set([
+      "showOverlay", "overlayOpacity", "showSmileArc", "showMidline",
+      "showGingivalLine", "midlineX", "smileArcY", "gingivalLineY",
+      "leftCommissureX", "rightCommissureX", "alignmentMarkers",
+    ]);
+    const alignmentKeys = new Set(["showPhotoIn3D", "scanReferencePoints"]);
+    const canvasKeys = new Set([
+      "photoZoom", "photoPanX", "photoPanY", "cameraDistance",
+      "activeCollectionId", "designTab", "gimbalMode", "activeGimbalAxis",
+      "hiddenLayers",
+    ]);
 
-const WORKFLOW_STAGES = new Set<string>(["import", "align", "design", "review", "present"]);
+    const navPartial: Record<string, unknown> = {};
+    const overlayPartial: Record<string, unknown> = {};
+    const alignmentPartial: Record<string, unknown> = {};
+    const canvasPartial: Record<string, unknown> = {};
 
-export function getCaseWorkflowStage(id: ViewId): CaseWorkflowStage | null {
-  const normalized = normalizeViewId(id);
-  return WORKFLOW_STAGES.has(normalized) ? (normalized as CaseWorkflowStage) : null;
-}
-export type DesignTab = "3d" | "photo";
+    for (const [key, value] of Object.entries(partial)) {
+      if (navKeys.has(key)) navPartial[key] = value;
+      else if (overlayKeys.has(key)) overlayPartial[key] = value;
+      else if (alignmentKeys.has(key)) alignmentPartial[key] = value;
+      else if (canvasKeys.has(key)) canvasPartial[key] = value;
+    }
 
-export type AlignmentMarkerType = "incisal" | "cusp";
+    if (Object.keys(navPartial).length > 0) useNavigationStore.setState(navPartial as any);
+    if (Object.keys(overlayPartial).length > 0) useOverlayStore.setState(overlayPartial as any);
+    if (Object.keys(alignmentPartial).length > 0) useAlignmentStore.setState(alignmentPartial as any);
+    if (Object.keys(canvasPartial).length > 0) useCanvasStore.setState(canvasPartial as any);
+  },
+  subscribe: (listener: (state: CombinedState) => void) => {
+    const unsubs = [
+      useNavigationStore.subscribe(() => listener(getCombinedState())),
+      useOverlayStore.subscribe(() => listener(getCombinedState())),
+      useAlignmentStore.subscribe(() => listener(getCombinedState())),
+      useCanvasStore.subscribe(() => listener(getCombinedState())),
+    ];
+    return () => unsubs.forEach((u) => u());
+  },
+});
 
-export interface AlignmentMarker {
-  id: string;
-  type: AlignmentMarkerType;
-  /** Tooth number (Universal) this marker corresponds to, e.g. "8", "6" */
-  toothId: string;
-  /** X position as percent of photo width (0-100) */
-  x: number;
-  /** Y position as percent of photo height (0-100) */
-  y: number;
-}
-
-/**
- * 3D/2D correspondence for one reference tooth.
- * Produced by the AlignmentCalibrationWizard and used to compute the
- * perspective-aligned camera position for photo-in-3D superimposition.
- */
-export interface ScanReferencePoint {
-  /** Photo X position as percent of photo width (0-100) */
-  photoX: number;
-  /** Photo Y position as percent of photo height (0-100) */
-  photoY: number;
-  /** Scan X position in STL model space (mm) */
-  scanX: number;
-  /** Scan Y position in STL model space (mm) */
-  scanY: number;
-  /** Scan Z position in STL model space (mm) */
-  scanZ: number;
-}
-
-export interface ScanReferencePoints {
-  centralR: ScanReferencePoint;
-  centralL: ScanReferencePoint;
-  additionalPoints?: ScanReferencePoint[];
-}
-
-// ─── State and actions interfaces ────────────────────────────────────────────
-
-interface ViewportState {
-  // Navigation
-  activeView: ViewId;
-
-  // Overlay toggles
-  showOverlay: boolean;
-  overlayOpacity: number;
-  showSmileArc: boolean;
-  showMidline: boolean;
-  showGingivalLine: boolean;
-
-  // Overlay guide positions
-  midlineX: number;
-  smileArcY: number;
-  gingivalLineY: number;
-
-  // Commissure guides
-  leftCommissureX: number;
-  rightCommissureX: number;
-
-  // Photo viewport
-  photoZoom: number;
-  photoPanX: number;
-  photoPanY: number;
-
-  // Alignment markers
-  alignmentMarkers: AlignmentMarker[];
-
-  // Arch camera
-  cameraDistance: number;
-
-  // Active library collection
-  activeCollectionId: string | null;
-
-  // Design view tab
-  designTab: DesignTab;
-
-  // Gimbal transform mode for 3D tooth manipulation
-  gimbalMode: "translate" | "rotate" | "scale";
-
-  // Photo-in-3D overlay: show patient photo as a plane in the 3D viewport
-  showPhotoIn3D: boolean;
-
-  /**
-   * 3D/2D reference correspondences from the AlignmentCalibrationWizard.
-   * Used to compute a perspective-aligned camera for photo-in-3D superimposition.
-   * Null when the wizard has not been run yet.
-   */
-  scanReferencePoints: ScanReferencePoints | null;
-
-  // Active gimbal axis for 2D manipulation (null = none or free)
-  activeGimbalAxis: "x" | "y" | "rotate" | null;
-}
-
-interface ViewportActions {
-  setActiveView: (view: ViewId) => void;
-  setShowOverlay: (show: boolean) => void;
-  setOverlayOpacity: (opacity: number) => void;
-  setShowSmileArc: (show: boolean) => void;
-  setShowMidline: (show: boolean) => void;
-  setShowGingivalLine: (show: boolean) => void;
-  setMidlineX: (x: number) => void;
-  setSmileArcY: (y: number) => void;
-  setGingivalLineY: (y: number) => void;
-  setLeftCommissureX: (x: number) => void;
-  setRightCommissureX: (x: number) => void;
-  setPhotoZoom: (zoom: number) => void;
-  setPhotoPan: (x: number, y: number) => void;
-  addAlignmentMarker: (marker: AlignmentMarker) => void;
-  updateAlignmentMarker: (id: string, updates: Partial<Pick<AlignmentMarker, "x" | "y">>) => void;
-  removeAlignmentMarker: (id: string) => void;
-  clearAlignmentMarkers: () => void;
-  setCameraDistance: (distance: number) => void;
-  setActiveCollectionId: (id: string | null) => void;
-  setDesignTab: (tab: DesignTab) => void;
-  setGimbalMode: (mode: "translate" | "rotate" | "scale") => void;
-  setActiveGimbalAxis: (axis: "x" | "y" | "rotate" | null) => void;
-  setShowPhotoIn3D: (show: boolean) => void;
-  setScanReferencePoints: (refs: ScanReferencePoints) => void;
-  clearScanReferencePoints: () => void;
-  resetViewport: () => void;
-}
-
-export type ViewportStore = ViewportState & ViewportActions;
-
-// ─── Initial state ────────────────────────────────────────────────────────────
-
-const INITIAL_VIEWPORT_STATE: ViewportState = {
-  activeView: "import",
-
-  showOverlay: false,
-  overlayOpacity: 0.7,
-  showSmileArc: true,
-  showMidline: true,
-  showGingivalLine: false,
-
-  midlineX: 50,
-  smileArcY: 60,
-  gingivalLineY: 30,
-
-  leftCommissureX: 25,
-  rightCommissureX: 75,
-
-  photoZoom: 1,
-  photoPanX: 0,
-  photoPanY: 0,
-
-  alignmentMarkers: [],
-
-  cameraDistance: 200,
-
-  activeCollectionId: "natural-ovoid",
-
-  designTab: "3d",
-  gimbalMode: "translate",
-  activeGimbalAxis: null,
-  showPhotoIn3D: false,
-  scanReferencePoints: null,
-};
-
-// ─── Store ────────────────────────────────────────────────────────────────────
-
-/** Keys persisted to localStorage so calibration data survives HMR / page reload. */
-const PERSISTED_KEYS: (keyof ViewportState)[] = [
-  "scanReferencePoints",
-  "alignmentMarkers",
-  "midlineX",
-  "smileArcY",
-  "leftCommissureX",
-  "rightCommissureX",
-];
-
-export const useViewportStore = create<ViewportStore>()(
-  persist(
-    (set, get) => ({
-      ...INITIAL_VIEWPORT_STATE,
-
-      setActiveView: (view) => {
-        const updates: Partial<ViewportState> = { activeView: view };
-        // Auto-enable photo overlay when entering simulate view with calibrated reference points
-        if (normalizeViewId(view) === "design" && get().scanReferencePoints) {
-          updates.showPhotoIn3D = true;
-        }
-        set(updates);
-      },
-      setShowOverlay: (show) => set({ showOverlay: show }),
-      setOverlayOpacity: (opacity) => set({ overlayOpacity: opacity }),
-      setShowSmileArc: (show) => set({ showSmileArc: show }),
-      setShowMidline: (show) => set({ showMidline: show }),
-      setShowGingivalLine: (show) => set({ showGingivalLine: show }),
-      setMidlineX: (x) => set({ midlineX: x }),
-      setSmileArcY: (y) => set({ smileArcY: y }),
-      setGingivalLineY: (y) => set({ gingivalLineY: y }),
-      setLeftCommissureX: (x) => set({ leftCommissureX: x }),
-      setRightCommissureX: (x) => set({ rightCommissureX: x }),
-      setPhotoZoom: (zoom) => set({ photoZoom: Math.max(0.25, Math.min(5, zoom)) }),
-      setPhotoPan: (x, y) => set({ photoPanX: x, photoPanY: y }),
-
-      addAlignmentMarker: (marker) =>
-        set((s) => ({ alignmentMarkers: [...s.alignmentMarkers, marker] })),
-
-      updateAlignmentMarker: (id, updates) =>
-        set((s) => ({
-          alignmentMarkers: s.alignmentMarkers.map((m) =>
-            m.id === id ? { ...m, ...updates } : m
-          ),
-        })),
-
-      removeAlignmentMarker: (id) =>
-        set((s) => ({ alignmentMarkers: s.alignmentMarkers.filter((m) => m.id !== id) })),
-
-      clearAlignmentMarkers: () => set({ alignmentMarkers: [] }),
-
-      setCameraDistance: (distance) => set({ cameraDistance: distance }),
-      setActiveCollectionId: (id) => set({ activeCollectionId: id }),
-      setDesignTab: (tab) => set({ designTab: tab }),
-      setGimbalMode: (mode) => set({ gimbalMode: mode }),
-      setActiveGimbalAxis: (axis) => set({ activeGimbalAxis: axis }),
-      setShowPhotoIn3D: (show) => set({ showPhotoIn3D: show }),
-      setScanReferencePoints: (refs) => set({ scanReferencePoints: refs }),
-      clearScanReferencePoints: () => set({ scanReferencePoints: null }),
-
-      resetViewport: () => set(INITIAL_VIEWPORT_STATE),
-    }),
-    {
-      name: "smilegen-viewport",
-      // Only persist calibration-critical data, not transient UI state
-      partialize: (state: ViewportStore) => {
-        const partial: Record<string, unknown> = {};
-        for (const key of PERSISTED_KEYS) {
-          partial[key] = state[key];
-        }
-        return partial;
-      },
-    } as any,
-  ),
-);
+// Legacy type export
+export type ViewportStore = CombinedState;

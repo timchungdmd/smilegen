@@ -10,6 +10,8 @@ import { ShadeSelector } from "../color/ShadeSelector";
 import { SmileMetricsPanel } from "../analysis/SmileMetricsPanel";
 import type { ToothLibraryEntry } from "../library/toothLibraryTypes";
 import { ArchFormEditor } from "../alignment/ArchFormEditor";
+import { useCanvasStore } from "../../store/useCanvasStore";
+import { useImportStore } from "../../store/useImportStore";
 
 function InspectorCard({
   children,
@@ -49,6 +51,10 @@ export function DesignSidebar() {
 
   const mappingState = useCaseStore((s) => s.mappingState);
 
+  const hiddenLayers = useCanvasStore((s) => s.hiddenLayers);
+  const toggleLayer = useCanvasStore((s) => s.toggleLayer);
+  const archScanMesh = useImportStore((s) => s.archScanMesh);
+
   const selectedTooth = activeVariant?.teeth.find((t) => t.toothId === selectedToothId) ?? null;
 
   return (
@@ -63,6 +69,28 @@ export function DesignSidebar() {
           <TrustBanner summary={trustSummary} />
         </InspectorCard>
       )}
+
+      {/* Layers */}
+      <InspectorCard>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+          Layers
+        </div>
+        {[
+          { id: "arch-scan", label: "Arch Scan", visible: Boolean(archScanMesh) },
+          { id: "design-teeth", label: "Design Teeth", visible: Boolean(activeVariant) },
+          { id: "arch-curve", label: "Arch Curve", visible: Boolean(activeVariant) },
+          { id: "grid", label: "Grid", visible: true },
+        ].filter(l => l.visible).map(layer => (
+          <label key={layer.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer", padding: "2px 0" }}>
+            <input
+              type="checkbox"
+              checked={!hiddenLayers.has(layer.id)}
+              onChange={() => toggleLayer(layer.id)}
+            />
+            {layer.label}
+          </label>
+        ))}
+      </InspectorCard>
 
       {/* Smile Plan */}
       <InspectorCard>
