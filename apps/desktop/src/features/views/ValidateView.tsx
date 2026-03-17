@@ -253,7 +253,15 @@ function ReviewTab() {
 
 // ── Approvals tab ─────────────────────────────────────────────────────────
 
-function ApprovalsTab() {
+function ApprovalsTab({
+  checklistPassed,
+  measurementsVisited,
+  designViewed,
+}: {
+  checklistPassed: boolean;
+  measurementsVisited: boolean;
+  designViewed: boolean;
+}) {
   const readyForDoctor = useDesignStore((s) => s.readyForDoctor);
   const markReadyForDoctor = useDesignStore((s) => s.markReadyForDoctor);
   const setActiveView = useViewportStore((s) => s.setActiveView);
@@ -311,10 +319,25 @@ function ApprovalsTab() {
         </div>
       </div>
 
+      {!readyForDoctor && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 4 }}>
+            Review Checklist
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: designViewed ? "var(--success)" : "var(--text-muted)" }}>
+            {designViewed ? "\u2713" : "\u25CB"} Design viewed in comparison
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: measurementsVisited ? "var(--success)" : "var(--text-muted)" }}>
+            {measurementsVisited ? "\u2713" : "\u25CB"} Measurements reviewed
+          </label>
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 10 }}>
         {!readyForDoctor && (
           <button
             onClick={() => markReadyForDoctor()}
+            disabled={!checklistPassed}
             style={{
               flex: 1,
               padding: "10px",
@@ -324,7 +347,8 @@ function ApprovalsTab() {
               borderRadius: 8,
               fontSize: 13,
               fontWeight: 600,
-              cursor: "pointer",
+              cursor: checklistPassed ? "pointer" : "not-allowed",
+              opacity: checklistPassed ? 1 : 0.5,
             }}
           >
             Mark Ready for Doctor
@@ -364,6 +388,8 @@ function ApprovalsTab() {
 
 export function ValidateView() {
   const [activeTab, setActiveTab] = useState<ValidateTab>("comparison");
+  const [measurementsVisited, setMeasurementsVisited] = useState(false);
+  const [designViewed, setDesignViewed] = useState(false);
   const generatedDesign = useDesignStore((s) => s.generatedDesign);
   const readyForDoctor = useDesignStore((s) => s.readyForDoctor);
   const activeView = useViewportStore((s) => s.activeView);
@@ -458,13 +484,23 @@ export function ValidateView() {
         </div>
       )}
 
-      <TabRail active={activeTab} onChange={setActiveTab} />
+      <TabRail active={activeTab} onChange={(tab) => {
+        setActiveTab(tab);
+        if (tab === "measurements") setMeasurementsVisited(true);
+        if (tab === "comparison") setDesignViewed(true);
+      }} />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
         {activeTab === "comparison" && <CompareView />}
         {activeTab === "measurements" && <MeasurementsTab />}
         {activeTab === "review" && <ReviewTab />}
-        {activeTab === "approvals" && <ApprovalsTab />}
+        {activeTab === "approvals" && (
+          <ApprovalsTab
+            checklistPassed={measurementsVisited && designViewed}
+            measurementsVisited={measurementsVisited}
+            designViewed={designViewed}
+          />
+        )}
       </div>
     </div>
   );
