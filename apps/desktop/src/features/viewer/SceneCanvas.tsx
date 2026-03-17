@@ -519,6 +519,8 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
     setPhotoBgAspect(null);
   }, [photoUrl]);
 
+  const [showMeasurements, setShowMeasurements] = useState(false);
+
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const [animTarget, setAnimTarget] = useState<{
@@ -914,6 +916,16 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
             </svg>
           </button>
         )}
+        <button
+          className="btn-icon"
+          title={showMeasurements ? "Hide Measurements" : "Show Measurements"}
+          onClick={() => setShowMeasurements(v => !v)}
+          style={{ color: showMeasurements ? "var(--accent)" : undefined }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 10H3V8h2v4h2V8h2v4h2V8h2v4h2V8h2v4h2V8h2v4h1V8h0v8z"/>
+          </svg>
+        </button>
       </div>
 
       {/* Camera presets - right side vertical strip */}
@@ -929,6 +941,53 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
           </button>
         ))}
       </div>
+
+      {/* Inline measurement labels for selected tooth */}
+      {showMeasurements && selectedToothId && activeVariant && (() => {
+        const tooth = activeVariant.teeth.find(t => t.toothId === selectedToothId);
+        if (!tooth) return null;
+        return (
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              right: 80,
+              background: "rgba(15, 20, 25, 0.85)",
+              backdropFilter: "blur(8px)",
+              borderRadius: 8,
+              padding: "8px 12px",
+              zIndex: 10,
+              border: "1px solid rgba(255,255,255,0.08)",
+              fontSize: 11,
+              color: "var(--text-secondary)",
+              display: "flex",
+              flexDirection: "column" as const,
+              gap: 4,
+              minWidth: 120,
+            }}
+          >
+            <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
+              Tooth #{tooth.toothId}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span>Width</span>
+              <span style={{ color: "var(--accent)", fontWeight: 500 }}>{tooth.width.toFixed(1)} mm</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span>Height</span>
+              <span style={{ color: "var(--accent)", fontWeight: 500 }}>{tooth.height.toFixed(1)} mm</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span>Depth</span>
+              <span style={{ color: "var(--accent)", fontWeight: 500 }}>{tooth.depth.toFixed(1)} mm</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <span>W:H Ratio</span>
+              <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{(tooth.width / tooth.height).toFixed(2)}</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Info bar */}
       <div className="viewer-info">
