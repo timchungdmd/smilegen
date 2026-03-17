@@ -490,7 +490,15 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
 
   // Photo-in-3D overlay state
   const showPhotoIn3D = useViewportStore((s) => s.showPhotoIn3D);
+  const setShowPhotoIn3D = useViewportStore((s) => s.setShowPhotoIn3D);
   const overlayOpacity = useViewportStore((s) => s.overlayOpacity);
+  const setOverlayOpacity = useViewportStore((s) => s.setOverlayOpacity);
+  const showMidline = useViewportStore((s) => s.showMidline);
+  const setShowMidline = useViewportStore((s) => s.setShowMidline);
+  const showSmileArc = useViewportStore((s) => s.showSmileArc);
+  const setShowSmileArc = useViewportStore((s) => s.setShowSmileArc);
+  const showGingivalLine = useViewportStore((s) => s.showGingivalLine);
+  const setShowGingivalLine = useViewportStore((s) => s.setShowGingivalLine);
   const scanReferencePoints = useViewportStore((s) => s.scanReferencePoints);
 
   // Ref to the TrackballControls so we can sync target after camera animation
@@ -737,6 +745,58 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
           />
         </GizmoHelper>
       </Canvas>
+
+      {/* Floating photo overlay controls */}
+      {showPhotoIn3D && (
+        <div style={{
+          position: "absolute",
+          bottom: 40,
+          left: 12,
+          background: "rgba(15, 20, 25, 0.85)",
+          backdropFilter: "blur(8px)",
+          borderRadius: 10,
+          padding: "10px 14px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          zIndex: 10,
+          border: "1px solid rgba(255,255,255,0.08)",
+          minWidth: 180,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>Photo Overlay</span>
+            <button
+              onClick={() => setShowPhotoIn3D(false)}
+              style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, padding: 0 }}
+              title="Close photo overlay"
+            >
+              ✕
+            </button>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--text-secondary)" }}>
+            Opacity
+            <input
+              type="range"
+              min={0} max={1} step={0.05}
+              value={overlayOpacity}
+              onChange={(e) => setOverlayOpacity(Number(e.target.value))}
+              style={{ flex: 1 }}
+            />
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer" }}>
+            <input type="checkbox" checked={showMidline} onChange={(e) => setShowMidline(e.target.checked)} />
+            Midline
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer" }}>
+            <input type="checkbox" checked={showSmileArc} onChange={(e) => setShowSmileArc(e.target.checked)} />
+            Smile Arc
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer" }}>
+            <input type="checkbox" checked={showGingivalLine} onChange={(e) => setShowGingivalLine(e.target.checked)} />
+            Gingival Line
+          </label>
+        </div>
+      )}
 
       {/* View preset buttons */}
       <div className="viewer-toolbar">

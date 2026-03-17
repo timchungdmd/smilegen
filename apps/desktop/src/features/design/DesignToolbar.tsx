@@ -7,9 +7,9 @@ import { validateImportSet } from "../import/importService";
 import { BUNDLED_COLLECTIONS } from "../library/bundledLibrary";
 
 /**
- * Top bar of the Design view: 3D/Photo tabs, variant tabs, case action
- * buttons, and photo-overlay controls. Reads state directly from stores —
- * no props required.
+ * Top bar of the Design view: 3D/Photo tabs, variant tabs, and case action
+ * buttons. Photo-overlay controls live in the floating panel inside SceneCanvas.
+ * Reads state directly from stores — no props required.
  */
 export function DesignToolbar() {
   const designTab = useViewportStore((s) => s.designTab);
@@ -18,17 +18,6 @@ export function DesignToolbar() {
   const setGimbalMode = useViewportStore((s) => s.setGimbalMode);
   const activeCollectionId = useViewportStore((s) => s.activeCollectionId);
   const setActiveCollectionId = useViewportStore((s) => s.setActiveCollectionId);
-  const showOverlay = useViewportStore((s) => s.showOverlay);
-  const setShowOverlay = useViewportStore((s) => s.setShowOverlay);
-  const overlayOpacity = useViewportStore((s) => s.overlayOpacity);
-  const setOverlayOpacity = useViewportStore((s) => s.setOverlayOpacity);
-  const showSmileArc = useViewportStore((s) => s.showSmileArc);
-  const setShowSmileArc = useViewportStore((s) => s.setShowSmileArc);
-  const showMidline = useViewportStore((s) => s.showMidline);
-  const setShowMidline = useViewportStore((s) => s.setShowMidline);
-  const showGingivalLine = useViewportStore((s) => s.showGingivalLine);
-  const setShowGingivalLine = useViewportStore((s) => s.setShowGingivalLine);
-
   const generatedDesign = useDesignStore((s) => s.generatedDesign);
   const activeVariantId = useDesignStore((s) => s.activeVariantId);
   const selectVariant = useDesignStore((s) => s.selectVariant);
@@ -184,40 +173,8 @@ export function DesignToolbar() {
               )}
             </div>
           )}
-        </div>
 
-        {designTab === "photo" && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer" }}>
-              <input type="checkbox" checked={showOverlay} onChange={(e) => setShowOverlay(e.target.checked)} />
-              Overlay
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer" }}>
-              <input type="checkbox" checked={showMidline} onChange={(e) => setShowMidline(e.target.checked)} />
-              Midline
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer" }}>
-              <input type="checkbox" checked={showSmileArc} onChange={(e) => setShowSmileArc(e.target.checked)} />
-              Smile Arc
-            </label>
-            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer" }}>
-              <input type="checkbox" checked={showGingivalLine} onChange={(e) => setShowGingivalLine(e.target.checked)} />
-              Gingival
-            </label>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Opacity</span>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={overlayOpacity}
-                onChange={(e) => setOverlayOpacity(Number(e.target.value))}
-                style={{ width: 60 }}
-              />
-            </div>
-          </div>
-        )}
+        </div>
       </div>
     </>
   );
