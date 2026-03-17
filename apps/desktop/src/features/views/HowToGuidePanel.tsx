@@ -35,19 +35,31 @@ const GUIDE_STEPS = [
 
 /** Collapsible "How to Use SmileGen" guide panel. Manages its own open/closed state. */
 export function HowToGuidePanel() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => {
+    return !localStorage.getItem("smilegen-ftux-seen");
+  });
+
+  const handleToggle = () => {
+    setOpen((v) => {
+      if (v) {
+        localStorage.setItem("smilegen-ftux-seen", "1");
+      }
+      return !v;
+    });
+  };
 
   return (
     <div
       className="panel"
       style={{
         background: "var(--bg-tertiary)",
-        border: "1px solid var(--border)"
+        border: "1px solid var(--border)",
+        overflow: "visible",   // allow flex parent to compute correct height
       }}
     >
       <div
         className="sidebar-section-header"
-        onClick={() => setOpen((v) => !v)}
+        onClick={handleToggle}
       >
         <h3 style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--accent)">
