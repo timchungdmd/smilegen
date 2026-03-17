@@ -79,14 +79,6 @@ export function AppShell() {
     <div
       className="app-shell"
       data-workspace-variant={workspaceVariant}
-      style={{
-        display: "grid",
-        gridTemplateColumns: "var(--sidebar-width) 1fr",
-        gridTemplateRows: "var(--header-height) 1fr",
-        height: "100vh",
-        overflow: "hidden",
-        position: "relative"
-      }}
     >
       <Header />
       <Sidebar activeView={activeView} />

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useDesignStore, selectActiveVariant } from "../../store/useDesignStore";
 import { useCaseStore } from "../../store/useCaseStore";
 import { SmilePlanPanel } from "../smile-plan/SmilePlanPanel";
@@ -9,6 +10,23 @@ import { ShadeSelector } from "../color/ShadeSelector";
 import { SmileMetricsPanel } from "../analysis/SmileMetricsPanel";
 import type { ToothLibraryEntry } from "../library/toothLibraryTypes";
 import { ArchFormEditor } from "../alignment/ArchFormEditor";
+
+function InspectorCard({
+  children,
+  tone = "default",
+}: {
+  children: ReactNode;
+  tone?: "default" | "accent" | "subtle";
+}) {
+  return (
+    <section
+      className={`inspector-card inspector-card--${tone}`}
+      data-testid="design-inspector-card"
+    >
+      {children}
+    </section>
+  );
+}
 
 /**
  * Right sidebar of the Design view: trust state, smile plan, arch form,
@@ -35,89 +53,107 @@ export function DesignSidebar() {
 
   return (
     <div
-      style={{
-        borderLeft: "1px solid var(--border)",
-        overflow: "auto",
-        display: "flex",
-        flexDirection: "column",
-        gap: 0
-      }}
+      className="design-inspector-stack design-sidebar-scroll"
+      data-testid="design-inspector-stack"
+      style={{ borderLeft: "1px solid var(--border)" }}
     >
       {/* Trust banner */}
-      {trustSummary && <TrustBanner summary={trustSummary} />}
+      {trustSummary && (
+        <InspectorCard tone="accent">
+          <TrustBanner summary={trustSummary} />
+        </InspectorCard>
+      )}
 
       {/* Smile Plan */}
-      <SmilePlanPanel
-        plan={plan}
-        onBiasChange={changeBias}
-        onControlsChange={updatePlanControls}
-        onToggleTooth={toggleToothAction}
-        onSetTreatmentType={setTreatmentTypeFn}
-      />
+      <InspectorCard>
+        <SmilePlanPanel
+          plan={plan}
+          onBiasChange={changeBias}
+          onControlsChange={updatePlanControls}
+          onToggleTooth={toggleToothAction}
+          onSetTreatmentType={setTreatmentTypeFn}
+        />
+      </InspectorCard>
 
       {/* Arch Form */}
-      <ArchFormEditor />
+      <InspectorCard>
+        <ArchFormEditor />
+      </InspectorCard>
 
       {/* Mapping */}
-      {mappingState && <ScanReviewPanel mappingState={mappingState} />}
+      {mappingState && (
+        <InspectorCard tone="subtle">
+          <ScanReviewPanel mappingState={mappingState} />
+        </InspectorCard>
+      )}
 
       {/* Tooth Inspector */}
       {selectedTooth && (
-        <ToothInspector
-          tooth={selectedTooth}
-          onDimensionChange={adjustTooth}
-        />
+        <InspectorCard tone="subtle">
+          <ToothInspector
+            tooth={selectedTooth}
+            onDimensionChange={adjustTooth}
+          />
+        </InspectorCard>
       )}
 
       {/* Shade selector */}
-      <ShadeSelector
-        selectedShade={selectedShadeId}
-        onSelectShade={setSelectedShadeId}
-      />
+      <InspectorCard>
+        <ShadeSelector
+          selectedShade={selectedShadeId}
+          onSelectShade={setSelectedShadeId}
+        />
+      </InspectorCard>
 
       {/* Tooth Library */}
-      <LibraryPanel
-        selectedToothId={selectedToothId}
-        onApplyTooth={(_toothNumber: string, entry: ToothLibraryEntry) => {
-          if (selectedToothId) {
-            adjustTooth(selectedToothId, {
-              width: entry.dimensions.width,
-              height: entry.dimensions.height,
-              depth: entry.dimensions.depth
-            });
-          }
-        }}
-        onApplyCollection={applyLibraryCollection}
-      />
+      <InspectorCard>
+        <LibraryPanel
+          selectedToothId={selectedToothId}
+          onApplyTooth={(_toothNumber: string, entry: ToothLibraryEntry) => {
+            if (selectedToothId) {
+              adjustTooth(selectedToothId, {
+                width: entry.dimensions.width,
+                height: entry.dimensions.height,
+                depth: entry.dimensions.depth
+              });
+            }
+          }}
+          onApplyCollection={applyLibraryCollection}
+        />
+      </InspectorCard>
 
       {/* Smile Metrics */}
       {activeVariant && (
-        <SmileMetricsPanel teeth={activeVariant.teeth} />
+        <InspectorCard tone="subtle">
+          <SmileMetricsPanel teeth={activeVariant.teeth} />
+        </InspectorCard>
       )}
 
       {/* Design info */}
       {activeVariant && (
-        <div style={{ padding: 14, borderTop: "1px solid var(--border)" }}>
-          <div className="label" style={{ marginBottom: 8 }}>
-            Active Design
+        <InspectorCard tone="subtle">
+          <div style={{ padding: 14 }}>
+            <div className="label" style={{ marginBottom: 8 }}>
+              Active Design
+            </div>
+            <div style={{ display: "grid", gap: 4 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                <span style={{ color: "var(--text-secondary)" }}>Variant</span>
+                <span className="label-value">{activeVariant.label}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                <span style={{ color: "var(--text-secondary)" }}>Teeth</span>
+                <span className="label-value">{activeVariant.teeth.length}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+                <span style={{ color: "var(--text-secondary)" }}>Triangles</span>
+                <span className="label-value">
+                  {activeVariant.teeth.reduce((s, t) => s + t.previewTriangles.length, 0)}
+                </span>
+              </div>
+            </div>
           </div>
-          <div style={{ display: "grid", gap: 4 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-              <span style={{ color: "var(--text-secondary)" }}>Variant</span>
-              <span className="label-value">{activeVariant.label}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-              <span style={{ color: "var(--text-secondary)" }}>Teeth</span>
-              <span className="label-value">{activeVariant.teeth.length}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-              <span style={{ color: "var(--text-secondary)" }}>Triangles</span>
-              <span className="label-value">
-                {activeVariant.teeth.reduce((s, t) => s + t.previewTriangles.length, 0)}
-              </span>
-            </div>
-          </div>
-        </div>
+        </InspectorCard>
       )}
     </div>
   );

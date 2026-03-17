@@ -8,16 +8,9 @@ import { DesignSidebar } from "../design/DesignSidebar";
  */
 export function DesignView() {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 280px",
-        height: "100%",
-        overflow: "hidden"
-      }}
-    >
+    <div className="design-view-grid">
       {/* Main design area: toolbar + viewport + tooth strip */}
-      <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div className="design-view-main">
         <DesignToolbar />
         <DesignViewport />
       </div>
