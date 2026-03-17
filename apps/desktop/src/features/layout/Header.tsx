@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useCaseStore } from "../../store/useCaseStore";
 import {
   getCaseWorkflowStage,
@@ -9,6 +9,7 @@ import { useDesignStore, selectActiveVariant } from "../../store/useDesignStore"
 import { useImportStore } from "../../store/useImportStore";
 import { validateImportSet } from "../import/importService";
 import { IconUndo, IconRedo, IconDownload } from "../ui/icons";
+import { ConfirmDialog } from "./ConfirmDialog";
 import {
   areWorkspaceExperimentsEnabled,
   useWorkspaceVariantStore,
@@ -111,9 +112,12 @@ export function Header() {
   const downloadActiveStl = useDesignStore((s) => s.downloadActiveStl);
   const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
   const archScanName = useImportStore((s) => s.archScanName);
+  const archScanMesh = useImportStore((s) => s.archScanMesh);
   const uploadedToothModels = useImportStore((s) => s.uploadedToothModels);
   const generatedDesign = useDesignStore((s) => s.generatedDesign);
   const readyForDoctor = useDesignStore((s) => s.readyForDoctor);
+  const variants = useDesignStore((s) => s.variants);
+  const [showNewCaseDialog, setShowNewCaseDialog] = useState(false);
   const workspaceVariant = useWorkspaceVariantStore((s) => s.variant);
   const setWorkspaceVariant = useWorkspaceVariantStore((s) => s.setVariant);
   const showWorkspaceVariantToggle = areWorkspaceExperimentsEnabled();
@@ -260,15 +264,7 @@ export function Header() {
         )}
 
         <button
-          onClick={() => {
-            if (
-              window.confirm(
-                `Start a new case? Unsaved changes will be lost.`
-              )
-            ) {
-              useCaseStore.getState().newCase();
-            }
-          }}
+          onClick={() => setShowNewCaseDialog(true)}
           style={{
             padding: "4px 10px",
             background: "transparent",
@@ -283,6 +279,21 @@ export function Header() {
         >
           New Case
         </button>
+
+        <ConfirmDialog
+          open={showNewCaseDialog}
+          title="Start New Case?"
+          message="All unsaved changes will be lost."
+          details={[
+            `${uploadedPhotos.length} photo${uploadedPhotos.length !== 1 ? "s" : ""}`,
+            archScanMesh ? "1 arch scan" : null,
+            `${variants.length} design variant${variants.length !== 1 ? "s" : ""}`,
+          ].filter(Boolean) as string[]}
+          confirmLabel="Discard & Start New"
+          confirmDanger
+          onConfirm={() => { useCaseStore.getState().newCase(); setShowNewCaseDialog(false); }}
+          onCancel={() => setShowNewCaseDialog(false)}
+        />
 
         {/* Undo / Redo */}
         <button

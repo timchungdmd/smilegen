@@ -17,7 +17,7 @@
  * Currently: structural scaffold.
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useDesignStore } from "../../store/useDesignStore";
 import { useImportStore } from "../../store/useImportStore";
 import { useCaseStore } from "../../store/useCaseStore";
@@ -26,6 +26,7 @@ import { StageBlockerScreen } from "../workflow/StageBlockerScreen";
 import { useWorkspaceVariantStore } from "../experiments/workspaceVariantStore";
 import { recordPresentationViewed } from "../experiments/workspaceMetrics";
 import { BeforeAfterSlider } from "../present/BeforeAfterSlider";
+import { PresentationMode } from "../present/PresentationMode";
 
 // ── Treatment Summary ─────────────────────────────────────────────────────
 
@@ -77,6 +78,7 @@ export function PresentView() {
   const workspaceVariant = useWorkspaceVariantStore((s) => s.variant);
   const isWorkspaceVariant = workspaceVariant === "workspace";
   const hasRecordedPresentationRef = useRef(false);
+  const [presentationMode, setPresentationMode] = useState(false);
 
   useEffect(() => {
     const isPresentStage = getCaseWorkflowStage(activeView) === "present";
@@ -158,6 +160,15 @@ export function PresentView() {
   }, [primaryPhoto]);
 
   return (
+    <>
+    {presentationMode && primaryPhoto && (
+      <PresentationMode
+        beforeSrc={primaryPhoto}
+        afterSrc={primaryPhoto}
+        patientName={caseRecord?.title}
+        onExit={() => setPresentationMode(false)}
+      />
+    )}
     <div
       className={isWorkspaceVariant ? "studio-stage studio-stage--present" : undefined}
       data-testid="present-workspace-shell"
@@ -201,25 +212,46 @@ export function PresentView() {
         </div>
         <div className="presentation-action-zone" data-testid="present-action-zone" style={{ display: "flex", gap: 8 }}>
           {primaryPhoto && (
-            <button
-              onClick={handleExport}
-              data-testid="export-png-button"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "6px 14px",
-                background: "var(--accent, #00b4d8)",
-                color: "#fff",
-                border: "none",
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Export PNG
-            </button>
+            <>
+              <button
+                onClick={() => setPresentationMode(true)}
+                data-testid="present-to-patient-button"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "6px 14px",
+                  background: "var(--accent, #00b4d8)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Present to Patient
+              </button>
+              <button
+                onClick={handleExport}
+                data-testid="export-png-button"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "6px 14px",
+                  background: "var(--bg-tertiary, #252b38)",
+                  color: "var(--text-muted, #8892a0)",
+                  border: "1px solid var(--border, #2a2f3b)",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                Export PNG
+              </button>
+            </>
           )}
           <button
             onClick={() => setActiveView("present")}
@@ -300,5 +332,6 @@ export function PresentView() {
         </div>
       )}
     </div>
+    </>
   );
 }
