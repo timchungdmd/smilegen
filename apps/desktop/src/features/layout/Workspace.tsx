@@ -163,6 +163,8 @@ export function Workspace({ activeView }: WorkspaceProps) {
 
   return (
     <main
+      id="workspace-panel"
+      role="tabpanel"
       style={{
         gridRow: 2,
         gridColumn: 2,

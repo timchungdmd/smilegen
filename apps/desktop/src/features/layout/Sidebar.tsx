@@ -1,6 +1,12 @@
-import { useViewportStore, type ViewId } from "../../store/useViewportStore";
+import {
+  getCaseWorkflowStage,
+  normalizeViewId,
+  useViewportStore,
+  type ViewId,
+} from "../../store/useViewportStore";
 import { useWorkflowStore } from "../../store/useWorkflowStore";
 import { STAGE_CONTRACT_MAP } from "../workflow/stageContracts";
+import { useWorkspaceVariantStore } from "../experiments/workspaceVariantStore";
 
 interface SidebarProps {
   activeView: ViewId;
@@ -22,6 +28,18 @@ interface NavItem {
   icon: string;
 }
 
+const WORKSPACE_STAGE_ICONS: Record<string, string> = {
+  import: "M19 13H5v-2h14v2zm0 6H5v-2h14v2zM5 5h14v2H5V5z",
+  align:
+    "M12 2l2.4 5.1L20 9l-4 3.9.9 5.6L12 16l-4.9 2.5.9-5.6L4 9l5.6-1.9L12 2z",
+  design:
+    "M7 17.01 17 7l-1.41-1.41L5.59 15.59 7 17.01zM3 21h4l11-11-4-4L3 17v4z",
+  review:
+    "M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+  present:
+    "M4 6h16v12H4zM2 4v16h20V4H2zm8 14h4v2h-4z",
+};
+
 function NavButton({
   item,
   isActive,
@@ -35,6 +53,7 @@ function NavButton({
     <button
       role="tab"
       aria-label={item.label}
+      aria-controls="workspace-panel"
       aria-current={isActive ? "page" : undefined}
       onClick={onClick}
       title={item.label}
@@ -89,41 +108,30 @@ function NavButton({
 
 // ── Sidebar ───────────────────────────────────────────────────────────────
 
-/** Legacy view aliases — map old ViewIds to their modern equivalents */
-const LEGACY: Partial<Record<ViewId, ViewId>> = {
-  import: "capture",
-  design: "simulate",
-  compare: "validate",
-  export: "collaborate",
-};
-
 export function Sidebar({ activeView }: SidebarProps) {
   const setActiveView = useViewportStore((s) => s.setActiveView);
+  const workspaceVariant = useWorkspaceVariantStore((s) => s.variant);
   // Ensure canNavigateTo subscribes to tick changes so locked state re-renders
   const _tick = useWorkflowStore((s) => s._tick);
+  void _tick;
 
   // Resolve legacy aliases for highlight matching
-  const resolvedActive: ViewId = LEGACY[activeView] ?? activeView;
+  const normalizedActive = normalizeViewId(activeView);
+  const activeStage = getCaseWorkflowStage(activeView);
 
   // ── Top nav: Cases + workflow stages ────────────────────────────────────
-  const workflowStageIds: ViewId[] = [
-    "overview",
-    "capture",
-    "simulate",
-    "plan",
-    "validate",
-    "present",
-    "collaborate",
-  ];
+  const workflowStageIds: ViewId[] = ["import", "align", "design", "review", "present"];
 
   const topItems: NavItem[] = [
     { id: "cases", label: "Cases", icon: CASES_ICON },
     ...workflowStageIds.map((id) => {
-      const contract = STAGE_CONTRACT_MAP[id as keyof typeof STAGE_CONTRACT_MAP];
       return {
         id,
-        label: contract?.shortLabel ?? id,
-        icon: contract?.icon ?? "",
+        label: id.charAt(0).toUpperCase() + id.slice(1),
+        icon:
+          WORKSPACE_STAGE_ICONS[id] ??
+          STAGE_CONTRACT_MAP[normalizeViewId(id) as keyof typeof STAGE_CONTRACT_MAP]?.icon ??
+          "",
       };
     }),
   ];
@@ -133,25 +141,37 @@ export function Sidebar({ activeView }: SidebarProps) {
   ];
 
   return (
-    <aside className="app-sidebar">
+    <aside
+      role="tablist"
+      aria-label="Workflow stages"
+      className={`app-sidebar ${workspaceVariant === "workspace" ? "app-sidebar--workspace" : ""}`}
+    >
       <div
+        data-testid={workspaceVariant === "workspace" ? "workspace-sidebar-rail" : undefined}
+        className={workspaceVariant === "workspace" ? "workspace-sidebar-rail" : undefined}
         style={{
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
-          gap: 2,
+          gap: workspaceVariant === "workspace" ? 6 : 2,
         }}
+        data-layout="primary"
       >
         {topItems.map((item) => (
           <NavButton
             key={item.id}
             item={item}
-            isActive={resolvedActive === item.id}
+            isActive={
+              item.id === "cases"
+                ? normalizedActive === item.id
+                : activeStage === item.id
+            }
             onClick={() => setActiveView(item.id)}
           />
         ))}
       </div>
       <div
+        className="app-sidebar__footer"
         style={{
           display: "flex",
           flexDirection: "column",
@@ -163,7 +183,7 @@ export function Sidebar({ activeView }: SidebarProps) {
           <NavButton
             key={item.id}
             item={item}
-            isActive={resolvedActive === item.id}
+            isActive={normalizedActive === item.id}
             onClick={() => setActiveView(item.id)}
           />
         ))}
