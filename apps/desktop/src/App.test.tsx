@@ -196,7 +196,7 @@ test("starts on the import view with upload zones", async () => {
 test("workspace exposes a loading fallback when a new lazy stage is opened", async () => {
   await renderAppAndWait();
 
-  fireEvent.click(screen.getByRole("button", { name: "Design" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Design" }));
 
   expect(screen.getByTestId("workspace-loading-fallback")).toBeInTheDocument();
   await waitForWorkspaceToSettle();
@@ -387,22 +387,6 @@ test("present route still renders the present workspace instead of collaborate c
 
   expect(screen.getByTestId("present-action-zone")).toBeInTheDocument();
   expect(screen.queryByText("Archive")).not.toBeInTheDocument();
-});
-
-test("renders the collapsed case workflow rail with import align design review and present", async () => {
-  await renderAppAndWait();
-
-  expect(screen.getByRole("button", { name: "Import" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Align" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Design" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Review" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Present" })).toBeInTheDocument();
-  expect(screen.getByTestId("case-workflow-rail")).toHaveAttribute("data-active-stage", "import");
-
-  fireEvent.click(screen.getByRole("button", { name: "Align" }));
-
-  expect(useViewportStore.getState().activeView).toBe("align");
-  expect(screen.getByTestId("case-workflow-rail")).toHaveAttribute("data-active-stage", "align");
 });
 
 test("keeps the workspace experiment toggle hidden by default", async () => {

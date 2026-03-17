@@ -1,24 +1,101 @@
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useState,
+  type CSSProperties,
+  type ComponentType,
+} from "react";
 import type { ViewId } from "../../store/useViewportStore";
-// ── Legacy views (kept for backward compat) ────────────────────────────────
-import { ImportView } from "../views/ImportView";
-import { DesignView } from "../views/DesignView";
-import { CompareView } from "../views/CompareView";
-import { ExportView } from "../views/ExportView";
+import {
+  getWorkspaceRouteForView,
+  useViewportStore,
+} from "../../store/useViewportStore";
 // ── Core views ─────────────────────────────────────────────────────────────
 import { CaseListView } from "../views/CaseListView";
 import { SettingsPanel } from "../settings/SettingsPanel";
 import { ErrorBoundary } from "./ErrorBoundary";
-// ── New workflow views ─────────────────────────────────────────────────────
-import { OverviewView } from "../views/OverviewView";
-import { CaptureView } from "../views/CaptureView";
-import { SimulateView } from "../views/SimulateView";
-import { PlanView } from "../views/PlanView";
-import { ValidateView } from "../views/ValidateView";
-import { PresentView } from "../views/PresentView";
-import { CollaborateView } from "../views/CollaborateView";
+
+const CaptureView = lazy(async () => {
+  const mod = await import("../views/CaptureView");
+  return { default: mod.CaptureView };
+});
+
+const OverviewView = lazy(async () => {
+  const mod = await import("../views/OverviewView");
+  return { default: mod.OverviewView };
+});
+
+const SimulateView = lazy(async () => {
+  const mod = await import("../views/SimulateView");
+  return { default: mod.SimulateView };
+});
+
+const PlanView = lazy(async () => {
+  const mod = await import("../views/PlanView");
+  return { default: mod.PlanView };
+});
+
+const ValidateView = lazy(async () => {
+  const mod = await import("../views/ValidateView");
+  return { default: mod.ValidateView };
+});
+
+const PresentView = lazy(async () => {
+  const mod = await import("../views/PresentView");
+  return { default: mod.PresentView };
+});
+
+const CollaborateView = lazy(async () => {
+  const mod = await import("../views/CollaborateView");
+  return { default: mod.CollaborateView };
+});
 
 interface WorkspaceProps {
   activeView: ViewId;
+}
+
+type LazyWorkspaceRoute =
+  | "overview"
+  | "capture"
+  | "simulate"
+  | "plan"
+  | "validate"
+  | "present"
+  | "collaborate";
+
+const LAZY_WORKSPACE_ROUTES: LazyWorkspaceRoute[] = [
+  "overview",
+  "capture",
+  "simulate",
+  "plan",
+  "validate",
+  "present",
+  "collaborate",
+];
+
+const LAZY_WORKSPACE_ROUTE_SET = new Set<ViewId>(LAZY_WORKSPACE_ROUTES);
+
+function WorkspaceLoadingFallback() {
+  return (
+    <div
+      data-testid="workspace-loading-fallback"
+      style={{
+        flex: 1,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 0,
+        padding: 24,
+        color: "var(--text-muted, #8892a0)",
+        fontSize: 13,
+        letterSpacing: "0.02em",
+        background: "var(--bg-primary, #121620)",
+      }}
+    >
+      Loading workspace…
+    </div>
+  );
 }
 
 /**
@@ -36,19 +113,28 @@ interface WorkspaceProps {
  * their modern equivalents to support any persisted navigation state.
  */
 export function Workspace({ activeView }: WorkspaceProps) {
-  // Resolve legacy aliases
-  const resolved: ViewId =
-    activeView === "import"
-      ? "capture"
-      : activeView === "design"
-      ? "simulate"
-      : activeView === "compare"
-      ? "validate"
-      : activeView === "export"
-      ? "collaborate"
-      : activeView;
+  const resolved = getWorkspaceRouteForView(activeView);
+  const [mountedRoutes, setMountedRoutes] = useState<Set<ViewId>>(
+    () => new Set(LAZY_WORKSPACE_ROUTE_SET.has(resolved) ? [resolved] : [])
+  );
 
-  const show = (id: ViewId): React.CSSProperties => ({
+  useEffect(() => {
+    if (!LAZY_WORKSPACE_ROUTE_SET.has(resolved)) {
+      return;
+    }
+
+    setMountedRoutes((current) => {
+      if (current.has(resolved)) {
+        return current;
+      }
+
+      const next = new Set(current);
+      next.add(resolved);
+      return next;
+    });
+  }, [resolved]);
+
+  const show = (id: ViewId): CSSProperties => ({
     display: resolved === id ? "flex" : "none",
     flex: 1,
     flexDirection: "column",
@@ -56,10 +142,29 @@ export function Workspace({ activeView }: WorkspaceProps) {
     minHeight: 0,
   });
 
+  const shouldRenderLazyRoute = (id: LazyWorkspaceRoute) =>
+    mountedRoutes.has(id) || resolved === id;
+
+  const renderLazyRoute = (
+    id: LazyWorkspaceRoute,
+    label: string,
+    ViewComponent: ComponentType,
+  ) => (
+    <div key={id} style={show(id)}>
+      {shouldRenderLazyRoute(id) ? (
+        <Suspense fallback={resolved === id ? <WorkspaceLoadingFallback /> : null}>
+          <ErrorBoundary label={label}>
+            <ViewComponent />
+          </ErrorBoundary>
+        </Suspense>
+      ) : null}
+    </div>
+  );
+
   return (
     <main
       style={{
-        gridRow: 3,
+        gridRow: 2,
         gridColumn: 2,
         overflow: "hidden",
         display: "flex",
@@ -75,41 +180,13 @@ export function Workspace({ activeView }: WorkspaceProps) {
       </div>
 
       {/* ── Workflow stages ── */}
-      <div style={show("overview")}>
-        <ErrorBoundary label="Overview">
-          <OverviewView />
-        </ErrorBoundary>
-      </div>
-      <div style={show("capture")}>
-        <ErrorBoundary label="Capture">
-          <CaptureView />
-        </ErrorBoundary>
-      </div>
-      <div style={show("simulate")}>
-        <ErrorBoundary label="Simulate">
-          <SimulateView />
-        </ErrorBoundary>
-      </div>
-      <div style={show("plan")}>
-        <ErrorBoundary label="Plan">
-          <PlanView />
-        </ErrorBoundary>
-      </div>
-      <div style={show("validate")}>
-        <ErrorBoundary label="Validate">
-          <ValidateView />
-        </ErrorBoundary>
-      </div>
-      <div style={show("present")}>
-        <ErrorBoundary label="Present">
-          <PresentView />
-        </ErrorBoundary>
-      </div>
-      <div style={show("collaborate")}>
-        <ErrorBoundary label="Collaborate">
-          <CollaborateView />
-        </ErrorBoundary>
-      </div>
+      {renderLazyRoute("overview", "Align", OverviewView)}
+      {renderLazyRoute("capture", "Import", CaptureView)}
+      {renderLazyRoute("simulate", "Design", SimulateView)}
+      {renderLazyRoute("plan", "Design Planning", PlanView)}
+      {renderLazyRoute("validate", "Review", ValidateView)}
+      {renderLazyRoute("present", "Present", PresentView)}
+      {renderLazyRoute("collaborate", "Collaborate", CollaborateView)}
 
       {/* ── Utility ── */}
       <div
