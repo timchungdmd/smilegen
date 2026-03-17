@@ -1,10 +1,107 @@
 import { useMemo } from "react";
 import { useCaseStore } from "../../store/useCaseStore";
-import { useViewportStore } from "../../store/useViewportStore";
+import {
+  getCaseWorkflowStage,
+  useViewportStore,
+  type CaseWorkflowStage,
+} from "../../store/useViewportStore";
 import { useDesignStore, selectActiveVariant } from "../../store/useDesignStore";
 import { useImportStore } from "../../store/useImportStore";
 import { validateImportSet } from "../import/importService";
 import { IconUndo, IconRedo, IconDownload } from "../ui/icons";
+import {
+  areWorkspaceExperimentsEnabled,
+  useWorkspaceVariantStore,
+} from "../experiments/workspaceVariantStore";
+
+const WORKFLOW_STEPS: { id: CaseWorkflowStage; label: string; done: (args: {
+  hasAssetsReady: boolean;
+  hasGeneratedDesign: boolean;
+  isReviewReady: boolean;
+  statusLabel: string;
+}) => boolean }[] = [
+  {
+    id: "import",
+    label: "Import",
+    done: ({ hasAssetsReady }) => hasAssetsReady,
+  },
+  {
+    id: "align",
+    label: "Align",
+    done: ({ hasAssetsReady }) => hasAssetsReady,
+  },
+  {
+    id: "design",
+    label: "Design",
+    done: ({ hasGeneratedDesign }) => hasGeneratedDesign,
+  },
+  {
+    id: "review",
+    label: "Review",
+    done: ({ isReviewReady }) => isReviewReady,
+  },
+  {
+    id: "present",
+    label: "Present",
+    done: ({ statusLabel }) => statusLabel === "prepared",
+  },
+];
+
+type GuidedStepState = "active" | "completed" | "available" | "locked";
+
+function getGuidedStepState(args: {
+  step: CaseWorkflowStage;
+  activeStage: CaseWorkflowStage | null;
+  hasAssetsReady: boolean;
+  hasGeneratedDesign: boolean;
+  isReviewReady: boolean;
+  statusLabel: string;
+}): GuidedStepState {
+  const {
+    step,
+    activeStage,
+    hasAssetsReady,
+    hasGeneratedDesign,
+    isReviewReady,
+    statusLabel,
+  } = args;
+  const activeStepIndex = activeStage
+    ? WORKFLOW_STEPS.findIndex((candidate) => candidate.id === activeStage)
+    : -1;
+  const stepIndex = WORKFLOW_STEPS.findIndex((candidate) => candidate.id === step);
+  const isStepCompleted = WORKFLOW_STEPS[stepIndex]?.done({
+    hasAssetsReady,
+    hasGeneratedDesign,
+    isReviewReady,
+    statusLabel,
+  }) ?? false;
+
+  if (activeStage === step) {
+    return "active";
+  }
+
+  if (isStepCompleted && activeStepIndex > stepIndex) {
+    return "completed";
+  }
+
+  switch (step) {
+    case "import":
+      return hasAssetsReady ? "completed" : "available";
+    case "align":
+      if (hasAssetsReady) {
+        return activeStage === "import" ? "available" : "completed";
+      }
+      return "available";
+    case "design":
+      return isStepCompleted ? "completed" : hasAssetsReady ? "available" : "locked";
+    case "review":
+      return isStepCompleted ? "completed" : hasGeneratedDesign ? "available" : "locked";
+    case "present":
+      return isStepCompleted ? "completed" : statusLabel === "prepared" ? "available" : "locked";
+    default:
+      return "locked";
+  }
+}
 
 export function Header() {
   const caseRecord = useCaseStore((s) => s.caseRecord);
@@ -16,8 +113,14 @@ export function Header() {
   const archScanName = useImportStore((s) => s.archScanName);
   const uploadedToothModels = useImportStore((s) => s.uploadedToothModels);
   const generatedDesign = useDesignStore((s) => s.generatedDesign);
+  const readyForDoctor = useDesignStore((s) => s.readyForDoctor);
+  const workspaceVariant = useWorkspaceVariantStore((s) => s.variant);
+  const setWorkspaceVariant = useWorkspaceVariantStore((s) => s.setVariant);
+  const showWorkspaceVariantToggle = areWorkspaceExperimentsEnabled();
+  const isWorkspaceVariant = workspaceVariant === "workspace";
 
   const statusLabel = caseRecord?.workflowState ?? "draft";
+  const activeStage = getCaseWorkflowStage(activeView);
   const canQuickGenerate = useMemo(() => {
     const v = validateImportSet({
       photos: uploadedPhotos.map((p) => p.name),
@@ -27,13 +130,7 @@ export function Header() {
     return v.ok;
   }, [uploadedPhotos, archScanName, uploadedToothModels]);
 
-  // Workflow steps
-  const steps = [
-    { id: "import", label: "Import", done: Boolean(archScanName && uploadedPhotos.length) },
-    { id: "design", label: "Design", done: Boolean(generatedDesign) },
-    { id: "compare", label: "Review", done: Boolean(generatedDesign) },
-    { id: "export", label: "Export", done: statusLabel === "prepared" }
-  ];
+  const hasAssetsReady = Boolean(archScanName && uploadedPhotos.length);
 
   return (
     <header className="app-header">
@@ -67,27 +164,126 @@ export function Header() {
         >
           {statusLabel}
         </span>
+
+        <div className="case-studio-label" data-testid="case-studio-landmark">
+          <span className="case-studio-label__eyebrow">
+            {isWorkspaceVariant ? "Studio" : "Workspace"}
+          </span>
+          <span className="case-studio-label__title">Case Studio</span>
+        </div>
       </div>
 
       {/* Center: workflow steps */}
-      <div className="workflow-steps">
-        {steps.map((step, i) => (
-          <div key={step.id} style={{ display: "flex", alignItems: "center" }}>
-            {i > 0 && <div className="workflow-step-connector" />}
-            <div
-              className={`workflow-step ${
-                activeView === step.id ? "active" : step.done ? "completed" : ""
-              }`}
-            >
-              <div className="workflow-step-dot" />
-              <span>{step.label}</span>
+      {isWorkspaceVariant ? (
+        <div className="workspace-header-focus">
+          <span className="workspace-header-focus__eyebrow">Clinical design studio</span>
+          <span className="workspace-header-focus__title">
+            Switch freely between Import, Align, Design, Review, and Present
+          </span>
+        </div>
+      ) : (
+        <div className="workflow-steps" data-testid="header-progress-chrome">
+          {WORKFLOW_STEPS.map((step, i) => {
+            const stepState = getGuidedStepState({
+              step: step.id,
+              activeStage,
+              hasAssetsReady,
+              hasGeneratedDesign: Boolean(generatedDesign),
+              isReviewReady: readyForDoctor || statusLabel === "prepared",
+              statusLabel,
+            });
+
+            return (
+            <div key={step.id} style={{ display: "flex", alignItems: "center" }}>
+              {i > 0 && <div className="workflow-step-connector" />}
+              <div
+                className={`workflow-step ${
+                  stepState === "active"
+                    ? "active"
+                    : stepState === "completed"
+                      ? "completed"
+                      : stepState === "available"
+                        ? "available"
+                        : "locked"
+                }`}
+                data-testid={`guided-progress-step-${step.id}`}
+                data-state={stepState}
+              >
+                <div className="workflow-step-dot" />
+                <span>{step.label}</span>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Right: actions */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div
+        className="header-action-zone"
+        data-testid="header-action-zone"
+        style={{ display: "flex", alignItems: "center", gap: 6 }}
+      >
+        {showWorkspaceVariantToggle && (
+          <>
+            <div className="workspace-variant-toggle" role="group" aria-label="Workspace Variant">
+              <button
+                className={`workspace-variant-toggle__button ${
+                  workspaceVariant === "workspace" ? "is-active" : ""
+                }`}
+                onClick={() => setWorkspaceVariant("workspace")}
+                aria-pressed={workspaceVariant === "workspace"}
+              >
+                Workspace
+              </button>
+              <button
+                className={`workspace-variant-toggle__button ${
+                  workspaceVariant === "guided" ? "is-active" : ""
+                }`}
+                onClick={() => setWorkspaceVariant("guided")}
+                aria-pressed={workspaceVariant === "guided"}
+              >
+                Guided
+              </button>
+            </div>
+
+            <div
+              style={{
+                height: 20,
+                width: 1,
+                background: "var(--border)",
+                marginLeft: 2,
+                marginRight: 2,
+              }}
+            />
+          </>
+        )}
+
+        <button
+          onClick={() => {
+            if (
+              window.confirm(
+                `Start a new case? Unsaved changes will be lost.`
+              )
+            ) {
+              useCaseStore.getState().newCase();
+            }
+          }}
+          style={{
+            padding: "4px 10px",
+            background: "transparent",
+            border: "1px solid var(--border, #2a2f3b)",
+            borderRadius: 5,
+            cursor: "pointer",
+            fontSize: 11,
+            color: "var(--text-secondary)",
+            whiteSpace: "nowrap",
+          }}
+          title="Discard current case and start fresh"
+        >
+          New Case
+        </button>
+
         {/* Undo / Redo */}
         <button
           className="btn-icon"
@@ -107,9 +303,6 @@ export function Header() {
         >
           <IconRedo />
         </button>
-
-        <div style={{ height: 20, width: 1, background: "var(--border)", marginLeft: 2, marginRight: 2 }} />
-
         {canQuickGenerate && !activeVariant && (
           <button className="btn btn-primary btn-sm" onClick={quickGenerate}>
             Generate Design
