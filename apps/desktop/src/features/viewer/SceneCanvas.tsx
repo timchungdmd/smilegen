@@ -1,15 +1,17 @@
 import { Canvas, useThree, useFrame } from "@react-three/fiber";
-import { OrbitControls, PerspectiveCamera, Grid, Environment, Line } from "@react-three/drei";
+import { TrackballControls, PerspectiveCamera, Grid, Environment, Line, GizmoHelper, GizmoViewport } from "@react-three/drei";
 import { useMemo, useRef, useCallback, useState, useEffect } from "react";
 import * as THREE from "three";
 import type { ParsedStlMesh } from "../import/stlParser";
 import type { GeneratedVariantDesign } from "../engine/designEngine";
 import { detectCollisions } from "../geometry/collisionDetector";
 import { useDesignStore } from "../../store/useDesignStore";
+import { useImportStore } from "../../store/useImportStore";
 import { createToothMaterial } from "./materials/toothMaterial";
 import { DentalLighting } from "./DentalLighting";
 import { GimbalTooth } from "./GimbalTooth";
-import { useViewportStore } from "../../store/useViewportStore";
+import { useViewportStore, type ScanReferencePoints } from "../../store/useViewportStore";
+import { resolvePhotoAlignedView } from "../alignment/photoAlignment";
 
 interface SceneCanvasProps {
   archScanMesh?: ParsedStlMesh | null;
@@ -46,15 +48,16 @@ function CameraAnimator({
   targetPos,
   targetLookAt,
   targetUp,
-  onComplete
+  controlsRef,
+  onComplete,
 }: {
   targetPos: THREE.Vector3 | null;
   targetLookAt: THREE.Vector3;
   targetUp: THREE.Vector3;
+  controlsRef: React.RefObject<any>;
   onComplete: () => void;
 }) {
   const { camera } = useThree();
-  const controlsRef = useRef<any>(null);
   const animating = useRef(false);
   const progress = useRef(0);
   const startPos = useRef(new THREE.Vector3());
@@ -66,8 +69,10 @@ function CameraAnimator({
       startUp.current.copy(camera.up);
       progress.current = 0;
       animating.current = true;
+      // Disable TrackballControls during animation so they don't fight
+      if (controlsRef.current) controlsRef.current.enabled = false;
     }
-  }, [targetPos, camera]);
+  }, [targetPos, camera, controlsRef]);
 
   useFrame((_, delta) => {
     if (!animating.current || !targetPos) return;
@@ -82,6 +87,12 @@ function CameraAnimator({
 
     if (progress.current >= 1) {
       animating.current = false;
+      // Sync TrackballControls to the new camera state so they don't snap back
+      if (controlsRef.current) {
+        controlsRef.current.target.copy(targetLookAt);
+        controlsRef.current.enabled = true;
+        controlsRef.current.update();
+      }
       onComplete();
     }
   });
@@ -301,6 +312,130 @@ function ToothMesh({
   );
 }
 
+// ─── Scene background controller ─────────────────────────────────────
+
+/**
+ * Controls the Three.js scene background.
+ * When transparent=true the scene bg is cleared to null so the CSS photo
+ * image behind the canvas shows through.  Otherwise a solid dark colour fills
+ * the canvas exactly as before.
+ */
+function SceneBackground({ transparent }: { transparent: boolean }) {
+  const { scene, gl } = useThree();
+  useEffect(() => {
+    if (transparent) {
+      scene.background = null;
+      gl.setClearAlpha(0);
+    } else {
+      scene.background = new THREE.Color("#141921");
+      gl.setClearAlpha(1);
+    }
+    return () => {
+      scene.background = new THREE.Color("#141921");
+      gl.setClearAlpha(1);
+    };
+  }, [transparent, scene, gl]);
+  return null;
+}
+
+// ─── Canvas aspect ratio reporter ────────────────────────────────────
+
+/** Reports the canvas pixel aspect ratio to parent so it can compute aligned camera. */
+function AspectReporter({ onAspect }: { onAspect: (aspect: number) => void }) {
+  const { size } = useThree();
+  useEffect(() => {
+    if (size.height > 0) onAspect(size.width / size.height);
+  }, [size.width, size.height, onAspect]);
+  return null;
+}
+
+// ─── Photo-aligned camera snapper (runs inside Canvas) ────────────
+/**
+ * Directly sets the camera to the photo-aligned position when photo mode
+ * is active.  Runs inside the <Canvas> so it has access to useThree().
+ * Unlike the animation-based approach, this handles:
+ *   - Syncing TrackballControls target so they don't fight
+ *   - Re-triggering when photoAspect becomes available (race condition fix)
+ *   - Disabling AutoFrame when photo mode is on
+ */
+function PhotoAligner({
+  active,
+  refs,
+  scanBounds,
+  photoAspect,
+  controlsRef,
+}: {
+  active: boolean;
+  refs: ScanReferencePoints | null;
+  scanBounds: ParsedStlMesh["bounds"] | null;
+  photoAspect: number;
+  controlsRef: React.RefObject<any>;
+}) {
+  const { camera, size } = useThree();
+
+  useEffect(() => {
+    if (!active || !refs || !scanBounds) {
+      if ("clearViewOffset" in camera) {
+        camera.clearViewOffset();
+        camera.updateProjectionMatrix();
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    const applyAlignment = async () => {
+      const canvasAspect = size.width / size.height;
+      const result = await resolvePhotoAlignedView(refs, scanBounds, canvasAspect, 45, photoAspect);
+      if (cancelled) {
+        return;
+      }
+
+      if (!result) {
+        if ("clearViewOffset" in camera) {
+          camera.clearViewOffset();
+          camera.updateProjectionMatrix();
+        }
+        return;
+      }
+
+      const dist = result.position.distanceTo(result.target);
+      if (controlsRef.current) {
+        controlsRef.current.enabled = false;
+      }
+
+      // Directly set camera — no animation for alignment (instant snap)
+      camera.position.copy(result.position);
+      camera.up.copy(result.up);
+      camera.lookAt(result.target);
+      camera.setViewOffset(
+        size.width,
+        size.height,
+        (-result.principalPointNdc.x * size.width) / 2,
+        (result.principalPointNdc.y * size.height) / 2,
+        size.width,
+        size.height
+      );
+      camera.updateProjectionMatrix();
+
+      if (controlsRef.current) {
+        controlsRef.current.target.copy(result.target);
+        controlsRef.current.maxDistance = Math.max(200, dist * 2);
+        controlsRef.current.update();
+        controlsRef.current.enabled = true;
+      }
+    };
+
+    void applyAlignment();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [active, refs, scanBounds, photoAspect, camera, size, controlsRef]);
+
+  return null;
+}
+
 function ArchCurveWireframe({ archHalfWidth = 35, archDepth = 15 }: { archHalfWidth?: number; archDepth?: number }) {
   const points = useMemo(() => {
     const pts: [number, number, number][] = [];
@@ -320,84 +455,66 @@ function ArchCurveWireframe({ archHalfWidth = 35, archDepth = 15 }: { archHalfWi
 
 // SceneLighting replaced by DentalLighting — see DentalLighting.tsx
 
-// ─── Axis indicator (CSS overlay — no second WebGL context) ──────────
-
+// ─── Visibility gate — prevents multiple WebGL contexts ─────────────
 /**
- * Reads the main camera quaternion every frame and reports projected axis
- * endpoints so a plain CSS/SVG overlay can render the gizmo without opening
- * a second WebGL context.
+ * Returns true only when the container element is actually painted
+ * (i.e. not hidden via display:none by the Workspace keep-alive pattern).
+ * This avoids creating a WebGL context for every mounted-but-hidden view,
+ * which leads to "Context Lost" errors when the GPU runs out of contexts.
  */
-function AxisReporter({ onAxes }: { onAxes: (axes: AxisEndpoints) => void }) {
-  const { camera } = useThree();
-  const _v = useRef(new THREE.Vector3());
-
-  useFrame(() => {
-    const project = (x: number, y: number, z: number) => {
-      _v.current.set(x, y, z).applyQuaternion(camera.quaternion);
-      return { x: _v.current.x, y: -_v.current.y }; // flip Y for screen coords
-    };
-    onAxes({ x: project(1, 0, 0), y: project(0, 1, 0), z: project(0, 0, 1) });
-  });
-
-  return null;
-}
-
-interface AxisEndpoints {
-  x: { x: number; y: number };
-  y: { x: number; y: number };
-  z: { x: number; y: number };
-}
-
-/** Pure CSS/SVG axis gizmo — zero GPU overhead. */
-function CssAxisGizmo({ axes }: { axes: AxisEndpoints }) {
-  const cx = 28;
-  const cy = 28;
-  const len = 20;
-
-  const ax = (v: { x: number; y: number }) => ({
-    x2: cx + v.x * len,
-    y2: cy + v.y * len
-  });
-
-  return (
-    <svg
-      width="56"
-      height="56"
-      style={{ display: "block" }}
-      aria-hidden="true"
-    >
-      {/* X — red */}
-      <line x1={cx} y1={cy} {...ax(axes.x)} stroke="#ef476f" strokeWidth="2" strokeLinecap="round" />
-      <text x={ax(axes.x).x2 + 3} y={ax(axes.x).y2 + 4} fill="#ef476f" fontSize="8" fontFamily="monospace">X</text>
-      {/* Y — green */}
-      <line x1={cx} y1={cy} {...ax(axes.y)} stroke="#06d6a0" strokeWidth="2" strokeLinecap="round" />
-      <text x={ax(axes.y).x2 + 3} y={ax(axes.y).y2 + 4} fill="#06d6a0" fontSize="8" fontFamily="monospace">Y</text>
-      {/* Z — blue */}
-      <line x1={cx} y1={cy} {...ax(axes.z)} stroke="#58a6ff" strokeWidth="2" strokeLinecap="round" />
-      <text x={ax(axes.z).x2 + 3} y={ax(axes.z).y2 + 4} fill="#58a6ff" fontSize="8" fontFamily="monospace">Z</text>
-    </svg>
-  );
+function useIsVisible(ref: React.RefObject<HTMLElement | null>) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setVisible(entry.isIntersecting),
+      { threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [ref]);
+  return visible;
 }
 
 // ─── Main component ──────────────────────────────────────────────────
 
 export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSelectTooth }: SceneCanvasProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isVisible = useIsVisible(containerRef);
   const hasContent = Boolean(archScanMesh) || Boolean(activeVariant?.teeth.length);
   const archDepthOverride = useDesignStore((s) => s.archDepthOverride);
   const archHalfWidthOverride = useDesignStore((s) => s.archHalfWidthOverride);
   const moveTooth = useDesignStore((s) => s.moveTooth);
   const gimbalMode = useViewportStore((s) => s.gimbalMode);
 
+  // Photo-in-3D overlay state
+  const showPhotoIn3D = useViewportStore((s) => s.showPhotoIn3D);
+  const overlayOpacity = useViewportStore((s) => s.overlayOpacity);
+  const scanReferencePoints = useViewportStore((s) => s.scanReferencePoints);
+
+  // Ref to the TrackballControls so we can sync target after camera animation
+  const controlsRef = useRef<any>(null);
+  const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
+  const photoUrl = uploadedPhotos[0]?.url ?? null;
+
+  // Canvas aspect ratio (updated by AspectReporter inside the Canvas)
+  const [canvasAspect, setCanvasAspect] = useState(1.5);
+
+  // Photo background aspect ratio (set via onLoad on the background <img>).
+  // Needed to correct the letterbox/pillarbox NDC mapping in computePhotoAlignedCamera.
+  const [photoBgAspect, setPhotoBgAspect] = useState<number | null>(null);
+
+  // Reset the cached aspect when the photo changes
+  useEffect(() => {
+    setPhotoBgAspect(null);
+  }, [photoUrl]);
+
   const [animTarget, setAnimTarget] = useState<{
     pos: THREE.Vector3;
     up: THREE.Vector3;
+    lookAt?: THREE.Vector3;
   } | null>(null);
-
-  const [axisEndpoints, setAxisEndpoints] = useState<AxisEndpoints>({
-    x: { x: 1, y: 0 },
-    y: { x: 0, y: -1 },
-    z: { x: 0, y: 0 }
-  });
 
   const collisions = useMemo(() => {
     if (!activeVariant) return [];
@@ -448,9 +565,82 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
     }
   }, [archScanMesh]);
 
+  /** Snap camera to the perspective-aligned photo view using stored reference points. */
+  const goToPhotoView = useCallback(async () => {
+    if (!scanReferencePoints?.centralR || !scanReferencePoints?.centralL || !archScanMesh) return;
+    // Use measured photo aspect if available; fall back to canvas aspect (no letterbox correction)
+    const effectivePhotoAspect = photoBgAspect ?? canvasAspect;
+    const result = await resolvePhotoAlignedView(
+      scanReferencePoints,
+      archScanMesh.bounds,
+      canvasAspect,
+      45,
+      effectivePhotoAspect
+    );
+    if (result) {
+      setAnimTarget({
+        pos: result.position,
+        up: result.up,
+        lookAt: result.target,
+      });
+    }
+  }, [scanReferencePoints, archScanMesh, canvasAspect, photoBgAspect]);
+
+  // Photo alignment is now handled by the <PhotoAligner> component inside the
+  // Canvas, which has direct access to useThree() and the controls ref.
+  // It triggers when showPhotoIn3D becomes true and also when photoBgAspect
+  // becomes available (fixing the race condition).
+
   return (
-    <div className="viewer-container" style={{ flex: 1 }}>
-      <Canvas shadows>
+    <div ref={containerRef} className="viewer-container" tabIndex={0} style={{ flex: 1, position: "relative" }}>
+
+      {/* Gate: only create the WebGL canvas when this container is painted.
+          The Workspace keep-alive pattern hides inactive views with display:none;
+          without this gate every mounted view allocates a WebGL context, quickly
+          exhausting the browser's limit and triggering "Context Lost" errors. */}
+      {!isVisible ? (
+        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
+          <span>3D viewer paused</span>
+        </div>
+      ) : (
+      <>
+
+      {/* ── Photo background ────────────────────────────────────────────────────
+          Patient photo is rendered as a CSS img BEHIND the transparent WebGL
+          canvas so it fills the viewport as a fixed reference background.
+          The 3D scan is then overlaid on top via the transparent canvas.        */}
+      {showPhotoIn3D && photoUrl && (
+        <img
+          src={photoUrl}
+          alt=""
+          aria-hidden="true"
+          onLoad={(e) => {
+            const img = e.currentTarget;
+            if (img.naturalHeight > 0) {
+              setPhotoBgAspect(img.naturalWidth / img.naturalHeight);
+            }
+          }}
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "contain",
+            objectPosition: "center",
+            opacity: overlayOpacity,
+            pointerEvents: "none",
+            userSelect: "none",
+            background: "#000",
+            zIndex: 0,
+          }}
+        />
+      )}
+
+      <Canvas shadows={{ type: THREE.PCFShadowMap }} gl={{ alpha: true }} style={{ position: "relative", zIndex: 1 }}>
+        {/* Controls scene transparency vs. solid dark background */}
+        <SceneBackground transparent={showPhotoIn3D} />
+        <AspectReporter onAspect={setCanvasAspect} />
+
         <PerspectiveCamera makeDefault position={[0, 8, 30]} fov={45} />
         <DentalLighting />
 
@@ -458,18 +648,28 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
 
         <CameraAnimator
           targetPos={animTarget?.pos ?? null}
-          targetLookAt={DEFAULT_TARGET}
+          targetLookAt={animTarget?.lookAt ?? DEFAULT_TARGET}
           targetUp={animTarget?.up ?? new THREE.Vector3(0, 1, 0)}
+          controlsRef={controlsRef}
           onComplete={() => setAnimTarget(null)}
+        />
+
+        {/* Snap camera to photo-aligned perspective when photo overlay is on */}
+        <PhotoAligner
+          active={showPhotoIn3D}
+          refs={scanReferencePoints}
+          scanBounds={archScanMesh?.bounds ?? null}
+          photoAspect={photoBgAspect ?? canvasAspect}
+          controlsRef={controlsRef}
         />
 
         {archScanMesh && (
           <StlMeshView
             mesh={archScanMesh}
-            color="#d4b8a0"
+            color="#5c7480"
             opacity={activeVariant ? 0.35 : 0.9}
-            metalness={0.02}
-            roughness={0.8}
+            metalness={0.18}
+            roughness={0.65}
           />
         )}
 
@@ -513,29 +713,29 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
           />
         )}
 
-        <OrbitControls
-          enablePan
-          enableZoom
-          enableRotate
-          enableDamping
-          dampingFactor={0.08}
-          rotateSpeed={0.8}
-          panSpeed={0.8}
+        <TrackballControls
+          ref={controlsRef}
+          rotateSpeed={2.5}
           zoomSpeed={1.2}
+          panSpeed={0.8}
+          staticMoving={false}
+          dynamicDampingFactor={0.15}
           minDistance={3}
           maxDistance={200}
-          minPolarAngle={0}
-          maxPolarAngle={Math.PI}
-          target={[0, 0, 0]}
-          mouseButtons={{
-            LEFT: THREE.MOUSE.ROTATE,
-            MIDDLE: THREE.MOUSE.DOLLY,
-            RIGHT: THREE.MOUSE.PAN
-          }}
+          noPan={false}
+          noZoom={false}
+          noRotate={false}
         />
         <Environment files="/studio_small_03_1k.hdr" />
-        {/* Report camera axes each frame so the CSS gizmo can track orientation */}
-        <AxisReporter onAxes={setAxisEndpoints} />
+
+        {/* Interactive orientation gizmo — bottom-right corner of the canvas */}
+        <GizmoHelper alignment="bottom-right" margin={[76, 76]}>
+          <GizmoViewport
+            axisColors={["#ef476f", "#06d6a0", "#58a6ff"]}
+            labelColor="white"
+            hideNegativeAxes
+          />
+        </GizmoHelper>
       </Canvas>
 
       {/* View preset buttons */}
@@ -545,6 +745,19 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
             <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
           </svg>
         </button>
+        {/* Photo-aligned view — only available when reference points exist */}
+        {scanReferencePoints && archScanMesh && (
+          <button
+            className="btn-icon"
+            title="Align to Photo"
+            onClick={goToPhotoView}
+            style={{ color: showPhotoIn3D ? "var(--accent)" : undefined }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M21 3H3C1.9 3 1 3.9 1 5v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM11 7l-5 6.5 3.5-1.5L12 15l2.5-3 3.5 4.5z"/>
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Camera presets - right side vertical strip */}
@@ -559,11 +772,6 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
             {preset.icon}
           </button>
         ))}
-      </div>
-
-      {/* Axis indicator — CSS/SVG overlay, no second WebGL context */}
-      <div className="viewer-axis-indicator">
-        <CssAxisGizmo axes={axisEndpoints} />
       </div>
 
       {/* Info bar */}
@@ -587,10 +795,13 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
 
       {/* Controls hint */}
       <div className="viewer-controls-hint">
-        <span>LMB: Rotate</span>
+        <span>LMB: Trackball</span>
         <span>RMB: Pan</span>
         <span>Scroll: Zoom</span>
       </div>
+
+      </>
+      )}
     </div>
   );
 }

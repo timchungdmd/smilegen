@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { matchShortcut } from "./keyboardShortcuts";
+import { matchShortcut, type ShortcutScope } from "./keyboardShortcuts";
 import { useViewportStore, type ViewId } from "../../store/useViewportStore";
 import { useDesignStore } from "../../store/useDesignStore";
 import { useCaseStore } from "../../store/useCaseStore";
@@ -31,7 +31,14 @@ export function useKeyboardShortcuts(): void {
         return;
       }
 
-      const action = matchShortcut(event);
+      const activeView = useViewportStore.getState().activeView;
+      const currentScope: ShortcutScope =
+        activeView === "design" ? "design" :
+        activeView === "import" ? "import" :
+        activeView === "review" ? "review" :
+        "global";
+
+      const action = matchShortcut(event, currentScope);
       if (!action) return;
 
       event.preventDefault();
@@ -99,6 +106,26 @@ export function useKeyboardShortcuts(): void {
 
         case "redo":
           useDesignStore.temporal.getState().redo();
+          break;
+
+        case "gimbal:translate":
+          viewportState.setGimbalMode("translate");
+          break;
+
+        case "gimbal:rotate":
+          viewportState.setGimbalMode("rotate");
+          break;
+
+        case "gimbal:scale":
+          viewportState.setGimbalMode("scale");
+          break;
+
+        case "frameSelected":
+          console.debug("[shortcuts] frameSelected – not yet implemented");
+          break;
+
+        case "showShortcuts":
+          console.debug("[shortcuts] showShortcuts – not yet implemented");
           break;
       }
     }
