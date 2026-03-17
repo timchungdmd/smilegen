@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useEffect } from "react";
 import { useViewportStore } from "../../store/useViewportStore";
 import { useImportStore } from "../../store/useImportStore";
 import { useKeyboardShortcuts } from "../shortcuts/useKeyboardShortcuts";
@@ -6,10 +6,17 @@ import { useDropZone } from "../import/useDropZone";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 import { Workspace } from "./Workspace";
-import { CaseContextBar } from "./CaseContextBar";
+import { useWorkspaceVariantStore } from "../experiments/workspaceVariantStore";
+import {
+  finishWorkspaceSession,
+  startWorkspaceSession,
+  syncWorkspaceVariant,
+  trackWorkspaceView,
+} from "../experiments/workspaceMetrics";
 
 export function AppShell() {
   const activeView = useViewportStore((s) => s.activeView);
+  const workspaceVariant = useWorkspaceVariantStore((s) => s.variant);
 
   // Global keyboard shortcuts
   useKeyboardShortcuts();
@@ -52,12 +59,30 @@ export function AppShell() {
   );
   const { isDragging } = useDropZone(dropHandlers);
 
+  useEffect(() => {
+    startWorkspaceSession(workspaceVariant);
+
+    return () => {
+      finishWorkspaceSession();
+    };
+  }, []);
+
+  useEffect(() => {
+    syncWorkspaceVariant(workspaceVariant);
+  }, [workspaceVariant]);
+
+  useEffect(() => {
+    trackWorkspaceView(activeView);
+  }, [activeView]);
+
   return (
     <div
+      className="app-shell"
+      data-workspace-variant={workspaceVariant}
       style={{
         display: "grid",
         gridTemplateColumns: "var(--sidebar-width) 1fr",
-        gridTemplateRows: "var(--header-height) auto 1fr",
+        gridTemplateRows: "var(--header-height) 1fr",
         height: "100vh",
         overflow: "hidden",
         position: "relative"
@@ -65,9 +90,7 @@ export function AppShell() {
     >
       <Header />
       <Sidebar activeView={activeView} />
-      {/* CaseContextBar spans both columns, in the auto-height second row */}
-      <CaseContextBar />
-      <Workspace activeView={activeView} />
+<Workspace activeView={activeView} />
 
       {/* Drag-and-drop overlay */}
       {isDragging && (
