@@ -202,7 +202,7 @@ const INITIAL_VIEWPORT_STATE: ViewportState = {
 
   cameraDistance: 200,
 
-  activeCollectionId: null,
+  activeCollectionId: "natural-ovoid",
 
   designTab: "3d",
   gimbalMode: "translate",
