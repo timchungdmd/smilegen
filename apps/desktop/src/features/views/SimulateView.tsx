@@ -111,7 +111,7 @@ function SimulateStageHeader({
               : "Open the 2-point photo-to-scan alignment wizard"
           }
         >
-          {showWizard ? "Hide Alignment" : "Align Photo"}
+          {showWizard ? "Hide Alignment" : "Refine Alignment"}
         </button>
 
         {hasVariants && (

@@ -207,7 +207,7 @@ function CaptureStageHeader({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {/* Auto-detect button */}
+          {/* Auto-detect button — primary when sidecar is ready and assets are available */}
           <button
             onClick={handleAutoDetect}
             disabled={autoDetectDisabled}
@@ -220,52 +220,96 @@ function CaptureStageHeader({
                 ? "Upload a photo first"
                 : "Detect facial landmarks from the first uploaded photo"
             }
-            style={{
-              padding: "6px 12px",
-              background: "var(--bg-tertiary, #252b38)",
-              color: autoDetectDisabled
-                ? "var(--text-muted, #555)"
-                : "var(--text-primary, #e0e6ef)",
-              border: "1px solid var(--border, #2a2f3b)",
-              borderRadius: 6,
-              fontSize: 12,
-              cursor: autoDetectDisabled ? "not-allowed" : "pointer",
-              opacity: autoDetectDisabled ? 0.6 : 1,
-            }}
+            style={
+              sidecarState === "ready" && hasPhotos && hasScan
+                ? {
+                    padding: "6px 14px",
+                    background: autoDetectDisabled
+                      ? "var(--bg-tertiary, #252b38)"
+                      : "var(--accent, #00b4d8)",
+                    color: autoDetectDisabled
+                      ? "var(--text-muted, #555)"
+                      : "#fff",
+                    border: "none",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: autoDetectDisabled ? "not-allowed" : "pointer",
+                    opacity: autoDetectDisabled ? 0.6 : 1,
+                  }
+                : {
+                    padding: "6px 12px",
+                    background: "var(--bg-tertiary, #252b38)",
+                    color: autoDetectDisabled
+                      ? "var(--text-muted, #555)"
+                      : "var(--text-primary, #e0e6ef)",
+                    border: "1px solid var(--border, #2a2f3b)",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    cursor: autoDetectDisabled ? "not-allowed" : "pointer",
+                    opacity: autoDetectDisabled ? 0.6 : 1,
+                  }
+            }
           >
             {autoDetectLabel}
           </button>
 
-          {/* Alignment wizard toggle — always visible; disabled until a photo is uploaded */}
+          {/* Alignment wizard toggle — secondary "Refine Alignment" when auto-detect is primary */}
           <button
             onClick={onToggleWizard}
             disabled={!hasPhotos}
-            style={{
-              padding: "6px 12px",
-              background: showWizard
-                ? "rgba(0,180,216,0.15)"
-                : "var(--bg-tertiary, #252b38)",
-              color: !hasPhotos
-                ? "var(--text-muted)"
-                : showWizard
-                ? "var(--accent, #00b4d8)"
-                : "var(--text-muted)",
-              border: "1px solid",
-              borderColor: showWizard
-                ? "var(--accent, #00b4d8)"
-                : "var(--border, #2a2f3b)",
-              borderRadius: 6,
-              fontSize: 12,
-              cursor: !hasPhotos ? "not-allowed" : "pointer",
-              opacity: !hasPhotos ? 0.5 : 1,
-            }}
+            style={
+              sidecarState === "ready" && hasPhotos && hasScan
+                ? {
+                    padding: "6px 12px",
+                    background: showWizard
+                      ? "rgba(0,180,216,0.15)"
+                      : "transparent",
+                    color: !hasPhotos
+                      ? "var(--text-muted)"
+                      : showWizard
+                      ? "var(--accent, #00b4d8)"
+                      : "var(--text-muted, #8892a0)",
+                    border: "1px solid",
+                    borderColor: showWizard
+                      ? "var(--accent, #00b4d8)"
+                      : "var(--border, #2a2f3b)",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    cursor: !hasPhotos ? "not-allowed" : "pointer",
+                    opacity: !hasPhotos ? 0.5 : 1,
+                  }
+                : {
+                    padding: "6px 12px",
+                    background: showWizard
+                      ? "rgba(0,180,216,0.15)"
+                      : "var(--bg-tertiary, #252b38)",
+                    color: !hasPhotos
+                      ? "var(--text-muted)"
+                      : showWizard
+                      ? "var(--accent, #00b4d8)"
+                      : "var(--text-muted)",
+                    border: "1px solid",
+                    borderColor: showWizard
+                      ? "var(--accent, #00b4d8)"
+                      : "var(--border, #2a2f3b)",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    cursor: !hasPhotos ? "not-allowed" : "pointer",
+                    opacity: !hasPhotos ? 0.5 : 1,
+                  }
+            }
             title={
               !hasPhotos
                 ? "Upload a patient photo first to use the alignment wizard"
                 : "Open the 2-point photo-to-scan alignment wizard"
             }
           >
-            {showWizard ? "Hide Alignment" : "Align Photo"}
+            {showWizard
+              ? "Hide Alignment"
+              : sidecarState === "ready" && hasPhotos && hasScan
+              ? "Refine Alignment"
+              : "Align Photo"}
           </button>
 
           <button
