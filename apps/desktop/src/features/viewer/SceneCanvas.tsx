@@ -13,6 +13,7 @@ import { InteractiveTooth } from "./InteractiveTooth";
 import { InteractiveArchCurve } from "./InteractiveArchCurve";
 import { useViewportStore } from "../../store/useViewportStore";
 import { useAlignmentStore, useAlignmentStore as useAlignmentStoreRaw, type AlignmentLandmarkId } from "../../store/useAlignmentStore";
+import type { AlignmentTransform3D } from "../alignment/alignmentTypes";
 import { resolveLandmarkAlignmentView } from "../alignment/photoAlignment";
 import { getScanLandmarkVisualState } from "./landmarkVisuals";
 import { getScanRenderStyle } from "./scanRenderStyle";
@@ -236,6 +237,60 @@ function AutoFrame({
   return null;
 }
 
+// ─── Landmark transform helpers ──────────────────────────────────────
+
+function applyLandmarkTransform(
+  point: { x: number; y: number; z: number },
+  center: THREE.Vector3,
+  transform: AlignmentTransform3D | undefined
+): [number, number, number] {
+  if (!transform) {
+    return [point.x - center.x, point.y - center.y, point.z - center.z];
+  }
+  const { scale, rotateX, rotateY, rotateZ, translateX, translateY, translateZ } = transform;
+
+  const centered = new THREE.Vector3(
+    point.x - center.x,
+    point.y - center.y,
+    point.z - center.z
+  );
+
+  const scaled = centered.clone().multiplyScalar(scale);
+
+  const euler = new THREE.Euler(rotateX, rotateY, rotateZ, 'XYZ');
+  const rotated = scaled.clone().applyEuler(euler);
+
+  return [
+    rotated.x + translateX,
+    rotated.y + translateY,
+    rotated.z + translateZ,
+  ];
+}
+
+function inverseLandmarkTransform(
+  worldPoint: THREE.Vector3,
+  center: THREE.Vector3,
+  transform: AlignmentTransform3D | undefined
+): { x: number; y: number; z: number } {
+  if (!transform) {
+    return { x: worldPoint.x + center.x, y: worldPoint.y + center.y, z: worldPoint.z + center.z };
+  }
+  const { scale, rotateX, rotateY, rotateZ, translateX, translateY, translateZ } = transform;
+
+  const afterTranslate = new THREE.Vector3(
+    worldPoint.x - translateX,
+    worldPoint.y - translateY,
+    worldPoint.z - translateZ
+  );
+
+  const invEuler = new THREE.Euler(-rotateX, -rotateY, -rotateZ, 'ZYX');
+  const afterRotation = afterTranslate.clone().applyEuler(invEuler);
+
+  const afterScale = afterRotation.clone().divideScalar(scale);
+
+  return { x: afterScale.x + center.x, y: afterScale.y + center.y, z: afterScale.z + center.z };
+}
+
 // ─── Mesh components ─────────────────────────────────────────────────
 
 function StlMeshView({
@@ -250,6 +305,7 @@ function StlMeshView({
   onPickPoint,
   landmarks = [],
   activeLandmarkId = null,
+  alignmentResult = null,
   setModelLandmark,
 }: {
   mesh: ParsedStlMesh;
@@ -263,11 +319,15 @@ function StlMeshView({
   onPickPoint?: (point: { x: number; y: number; z: number }) => void;
   landmarks?: ReturnType<typeof useAlignmentStore.getState>["landmarks"];
   activeLandmarkId?: ReturnType<typeof useAlignmentStore.getState>["activeLandmarkId"];
+  alignmentResult?: ReturnType<typeof useAlignmentStore.getState>["alignmentResult"];
   setModelLandmark?: (id: AlignmentLandmarkId, x: number, y: number, z: number) => void;
 }) {
   const [hoverPoint, setHoverPoint] = useState<THREE.Vector3 | null>(null);
   const [draggingLandmarkId, setDraggingLandmarkId] = useState<AlignmentLandmarkId | null>(null);
   const activeLandmark = landmarks.find((landmark) => landmark.id === activeLandmarkId) ?? null;
+
+  const transform = alignmentResult?.transform;
+
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     const vertexCount = mesh.triangles.length * 3;
@@ -314,30 +374,29 @@ function StlMeshView({
     <>
       <mesh
         geometry={geometry}
-        position={[-center.x, -center.y, -center.z]}
+        scale={transform?.scale ?? 1}
+        rotation={[transform?.rotateX ?? 0, transform?.rotateY ?? 0, transform?.rotateZ ?? 0]}
+        position={[
+          (transform?.translateX ?? 0) - center.x * (transform?.scale ?? 1),
+          (transform?.translateY ?? 0) - center.y * (transform?.scale ?? 1),
+          (transform?.translateZ ?? 0) - center.z * (transform?.scale ?? 1)
+        ]}
 onPointerDown={(event) => {
-  if (!pickEnabled || !onPickPoint) return;
-  event.stopPropagation();
-  onPickPoint({
-    x: event.point.x + center.x,
-    y: event.point.y + center.y,
-    z: event.point.z + center.z,
-  });
-}}
-onPointerMove={(event) => {
-  if (draggingLandmarkId && setModelLandmark) {
-    setModelLandmark(
-      draggingLandmarkId,
-      event.point.x + center.x,
-      event.point.y + center.y,
-      event.point.z + center.z
-    );
-  } else if (pickEnabled && activeLandmarkId) {
-    setHoverPoint(event.point.clone());
-  } else {
-    setHoverPoint(null);
-  }
-}}
+          if (!pickEnabled || !onPickPoint) return;
+          event.stopPropagation();
+          const modelCoord = inverseLandmarkTransform(event.point, center, transform);
+          onPickPoint(modelCoord);
+        }}
+        onPointerMove={(event) => {
+          if (draggingLandmarkId && setModelLandmark) {
+            const modelCoord = inverseLandmarkTransform(event.point, center, transform);
+            setModelLandmark(draggingLandmarkId, modelCoord.x, modelCoord.y, modelCoord.z);
+          } else if (pickEnabled && activeLandmarkId) {
+            setHoverPoint(event.point.clone());
+          } else {
+            setHoverPoint(null);
+          }
+        }}
 onPointerUp={() => {
   if (draggingLandmarkId) {
     setDraggingLandmarkId(null);
@@ -363,18 +422,14 @@ onPointerLeave={() => {
         />
       </mesh>
 {landmarks
-  .filter((landmark) => landmark.modelCoord)
-  .map((landmark) => {
-    const visual = getScanLandmarkVisualState(landmark, activeLandmarkId);
-    return (
-      <group
-        key={landmark.id}
-        position={[
-          landmark.modelCoord!.x - center.x,
-          landmark.modelCoord!.y - center.y,
-          landmark.modelCoord!.z - center.z,
-        ]}
-      >
+        .filter((landmark) => landmark.modelCoord)
+        .map((landmark) => {
+          const visual = getScanLandmarkVisualState(landmark, activeLandmarkId);
+          return (
+            <group
+              key={landmark.id}
+              position={applyLandmarkTransform(landmark.modelCoord!, center, transform)}
+            >
         {visual.showHalo && (
           <mesh>
             <sphereGeometry args={[visual.haloRadius, 16, 16]} />
@@ -416,7 +471,7 @@ onPointerLeave={() => {
     );
   })}
         {hoverPoint && activeLandmark && (
-          <mesh position={[hoverPoint.x - center.x, hoverPoint.y - center.y, hoverPoint.z - center.z]}>
+          <mesh position={applyLandmarkTransform({ x: hoverPoint.x, y: hoverPoint.y, z: hoverPoint.z }, center, transform)}>
             <sphereGeometry args={[0.5, 16, 16]} />
             <meshStandardMaterial
               color={activeLandmark.color}
@@ -515,6 +570,7 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
   const scanInteractionMode = useAlignmentStore((s) => s.scanInteractionMode);
   const landmarks = useAlignmentStore((s) => s.landmarks);
   const solvedView = useAlignmentStore((s) => s.solvedView);
+  const alignmentResult = useAlignmentStore((s) => s.alignmentResult);
   const setModelLandmark = useAlignmentStore((s) => s.setModelLandmark);
   const setActiveLandmark = useAlignmentStore((s) => s.setActiveLandmark);
   const setActiveSurface = useAlignmentStore((s) => s.setActiveSurface);
@@ -676,6 +732,25 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
     }
   }, [archScanMesh, importedScanSignature, isAlignmentMode, resetView]);
 
+  // Sync camera to alignmentResult in Alignment Mode
+  useEffect(() => {
+    if (isAlignmentMode && alignmentResult) {
+      setAnimTarget({
+        pos: new THREE.Vector3(
+          alignmentResult.cameraPosition.x,
+          alignmentResult.cameraPosition.y,
+          alignmentResult.cameraPosition.z
+        ),
+        lookAt: new THREE.Vector3(
+          alignmentResult.cameraTarget.x,
+          alignmentResult.cameraTarget.y,
+          alignmentResult.cameraTarget.z
+        ),
+        up: new THREE.Vector3(0, 1, 0), // Standard up vector
+      });
+    }
+  }, [isAlignmentMode, alignmentResult]);
+
   useEffect(() => {
     if (!scanLoadNotice) {
       return;
@@ -756,6 +831,7 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
     }
     landmarks={landmarks}
     activeLandmarkId={activeLandmarkId}
+    alignmentResult={alignmentResult}
     setModelLandmark={setModelLandmark}
     onPickPoint={(point) => {
       if (!activeLandmarkId) return;
