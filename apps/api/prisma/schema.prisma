@@ -19,16 +19,17 @@ model Patient {
 }
 
 model Case {
-  id        String     @id @default(cuid())
+  id String @id @default(cuid())
   patientId String
-  patient   Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  status    CaseStatus @default(DRAFT)
-  title     String     @default("New Case")
-  planJson  String?    @db.Text
-  designJson String?   @db.Text
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  assets    Asset[]
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  status CaseStatus @default(DRAFT)
+  title String @default("New Case")
+  planJson String? @db.Text
+  designJson String? @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  assets Asset[]
+  landmarkAlignments LandmarkAlignment[]
 }
 
 enum CaseStatus {
@@ -39,15 +40,34 @@ enum CaseStatus {
 }
 
 model Asset {
-  id        String    @id @default(cuid())
-  caseId    String
-  case      Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  type      AssetType
-  filename  String
-  s3Key     String
-  sizeBytes BigInt
-  mimeType  String
-  createdAt DateTime  @default(now())
+  id              String              @id @default(cuid())
+  caseId          String
+  case            Case                @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type            AssetType
+  filename        String
+  s3Key           String
+  sizeBytes       BigInt
+  mimeType        String
+  createdAt       DateTime            @default(now())
+  photoAlignments LandmarkAlignment[] @relation("PhotoLandmarks")
+  scanAlignments  LandmarkAlignment[] @relation("ScanLandmarks")
+}
+
+model LandmarkAlignment {
+  id           String   @id @default(cuid())
+  caseId       String
+  case         Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  photoAssetId String
+  photoAsset   Asset    @relation("PhotoLandmarks", fields: [photoAssetId], references: [id], onDelete: Cascade)
+  scanAssetId  String
+  scanAsset    Asset    @relation("ScanLandmarks", fields: [scanAssetId], references: [id], onDelete: Cascade)
+  landmarks    Json
+  transform    Json
+  quality      String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([caseId, photoAssetId, scanAssetId])
 }
 
 enum AssetType {
