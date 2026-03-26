@@ -259,16 +259,20 @@ setPhotoLandmark: (id, x, y) => set((state) => {
       };
     }),
 
-      clearLandmark: (id) =>
-        set((state) => ({
-          landmarks: updateLandmark(state.landmarks, id, {
-            photoCoord: null,
-            modelCoord: null,
-          }),
-          overlayTransform: null,
-          solvedView: null,
-          lastSolveError: null,
-        })),
+clearLandmark: (id) =>
+  set((state) => {
+    const updated = updateLandmark(state.landmarks, id, {
+      photoCoord: null,
+      modelCoord: null,
+    });
+    return {
+      landmarks: updated,
+      alignmentResult: trySolveAlignment(updated, state.viewWidth, state.viewHeight),
+      overlayTransform: null,
+      solvedView: null,
+      lastSolveError: null,
+    };
+  }),
 
 clearAllLandmarks: () =>
   set((state) => ({
