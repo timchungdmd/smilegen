@@ -36,6 +36,18 @@ export function project3Dto2D(
   );
   camera.position.set(cameraPosition.x, cameraPosition.y, cameraPosition.z);
   camera.lookAt(new THREE.Vector3(cameraTarget.x, cameraTarget.y, cameraTarget.z));
+
+  const ppOffsetX = (params.principalPoint.x - 0.5) * params.imageWidth;
+  const ppOffsetY = (params.principalPoint.y - 0.5) * params.imageHeight;
+  camera.setViewOffset(
+    params.imageWidth,
+    params.imageHeight,
+    ppOffsetX,
+    ppOffsetY,
+    params.imageWidth,
+    params.imageHeight
+  );
+
   camera.updateMatrixWorld(true);
   camera.updateProjectionMatrix();
 
@@ -45,12 +57,9 @@ export function project3Dto2D(
   const ndcX = (vector.x + 1) / 2;
   const ndcY = (1 - vector.y) / 2;
 
-  const ppOffsetX = (params.principalPoint.x - 0.5) * 2;
-  const ppOffsetY = (params.principalPoint.y - 0.5) * 2;
-
   return {
-    x: Math.max(0, Math.min(1, ndcX + ppOffsetX * 0.1)),
-    y: Math.max(0, Math.min(1, ndcY + ppOffsetY * 0.1)),
+    x: Math.max(0, Math.min(1, ndcX)),
+    y: Math.max(0, Math.min(1, ndcY)),
     depth: vector.z,
   };
 }

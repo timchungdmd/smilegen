@@ -11,13 +11,43 @@ interface SolverConfig {
   convergenceThreshold: number;
   learningRate: number;
   scaleRange: [number, number];
+  decayRate: number;
+  decaySteps: number;
+  minLearningRate: number;
+  rotationRange: [number, number];
+  translationRange: [number, number];
 }
 
 const DEFAULT_CONFIG: SolverConfig = {
-  maxIterations: 100,
-  convergenceThreshold: 0.001,
+  maxIterations: 30,
+  convergenceThreshold: 0.01,
   learningRate: 0.01,
   scaleRange: [0.7, 1.3],
+  decayRate: 0.9,
+  decaySteps: 5,
+  minLearningRate: 0.001,
+  rotationRange: [-0.5, 0.5],
+  translationRange: [-50, 50],
+};
+
+interface Gradients9DOF {
+  dScale: number;
+  dRotateX: number;
+  dRotateY: number;
+  dRotateZ: number;
+  dTranslateX: number;
+  dTranslateY: number;
+  dTranslateZ: number;
+  dCameraX: number;
+  dCameraY: number;
+  dCameraZ: number;
+}
+
+const EPSILONS = {
+  scale: 0.001,
+  rotate: 0.001,
+  translate: 0.01,
+  camera: 0.1,
 };
 
 export function solveAlignment(
@@ -54,8 +84,8 @@ export function solveAlignment(
   let bestError = Infinity;
   let bestCameraPos = initialCameraPos;
 
-  const scaleSeeds = [0.8, 0.9, 1.0, 1.1, 1.2];
-  const rollSeeds = [-0.1, -0.05, 0, 0.05, 0.1];
+  const scaleSeeds = [0.9, 1.0, 1.1];
+  const rollSeeds = [-0.05, 0, 0.05];
 
   for (const scaleSeed of scaleSeeds) {
     for (const rollSeed of rollSeeds) {
@@ -84,7 +114,7 @@ export function solveAlignment(
     }
   }
 
-  bestTransform = enforceScaleBounds(bestTransform, cfg.scaleRange);
+  bestTransform = enforceBounds(bestTransform, cfg);
 
   const landmarkErrors = computeLandmarkErrors(
     correspondences,
@@ -182,7 +212,12 @@ function refineAlignment(
     params
   );
 
+  const baseLearningRate = config.learningRate;
+
   for (let iter = 0; iter < config.maxIterations; iter++) {
+    const decayFactor = Math.pow(config.decayRate, Math.floor(iter / config.decaySteps));
+    const learningRate = Math.max(config.minLearningRate, baseLearningRate * decayFactor);
+
     const gradients = computeGradients(
       correspondences,
       transform,
@@ -191,11 +226,18 @@ function refineAlignment(
       params
     );
 
-    transform.scale -= gradients.dScale * config.learningRate;
-    transform.rotateZ -= gradients.dRoll * config.learningRate;
-    transform.translateX -= gradients.dTx * config.learningRate;
-    transform.translateY -= gradients.dTy * config.learningRate;
-    cameraPos.z -= gradients.dDist * config.learningRate;
+    transform.scale -= gradients.dScale * learningRate;
+    transform.rotateX -= gradients.dRotateX * learningRate;
+    transform.rotateY -= gradients.dRotateY * learningRate;
+    transform.rotateZ -= gradients.dRotateZ * learningRate;
+    transform.translateX -= gradients.dTranslateX * learningRate;
+    transform.translateY -= gradients.dTranslateY * learningRate;
+    transform.translateZ -= gradients.dTranslateZ * learningRate;
+    cameraPos.x -= gradients.dCameraX * learningRate;
+    cameraPos.y -= gradients.dCameraY * learningRate;
+    cameraPos.z -= gradients.dCameraZ * learningRate;
+
+    transform = enforceBounds(transform, config);
 
     const error = computeTotalError(correspondences, transform, cameraPos, cameraTarget, params);
 
@@ -239,20 +281,30 @@ function computeTotalError(
   return Math.sqrt(totalError / totalWeight);
 }
 
-function computeGradients(
+function gradientForParam(
   correspondences: LandmarkCorrespondence[],
   transform: AlignmentTransform3D,
   cameraPos: { x: number; y: number; z: number },
   cameraTarget: { x: number; y: number; z: number },
   params: ProjectionParams,
-  epsilon = 0.001
-): {
-  dScale: number;
-  dRoll: number;
-  dTx: number;
-  dTy: number;
-  dDist: number;
-} {
+  baseError: number,
+  param: keyof AlignmentTransform3D,
+  epsilon: number
+): number {
+  const modified = { ...transform, [param]: transform[param] + epsilon };
+  return (
+    (computeTotalError(correspondences, modified, cameraPos, cameraTarget, params) - baseError) /
+    epsilon
+  );
+}
+
+function computeGradients(
+  correspondences: LandmarkCorrespondence[],
+  transform: AlignmentTransform3D,
+  cameraPos: { x: number; y: number; z: number },
+  cameraTarget: { x: number; y: number; z: number },
+  params: ProjectionParams
+): Gradients9DOF {
   const baseError = computeTotalError(
     correspondences,
     transform,
@@ -261,62 +313,108 @@ function computeGradients(
     params
   );
 
-  const dScale =
-    (computeTotalError(
-      correspondences,
-      { ...transform, scale: transform.scale + epsilon },
-      cameraPos,
-      cameraTarget,
-      params
-    ) -
-      baseError) /
-    epsilon;
-
-  const dRoll =
-    (computeTotalError(
-      correspondences,
-      { ...transform, rotateZ: transform.rotateZ + epsilon },
-      cameraPos,
-      cameraTarget,
-      params
-    ) -
-      baseError) /
-    epsilon;
-
-  const dTx =
-    (computeTotalError(
-      correspondences,
-      { ...transform, translateX: transform.translateX + epsilon },
-      cameraPos,
-      cameraTarget,
-      params
-    ) -
-      baseError) /
-    epsilon;
-
-  const dTy =
-    (computeTotalError(
-      correspondences,
-      { ...transform, translateY: transform.translateY + epsilon },
-      cameraPos,
-      cameraTarget,
-      params
-    ) -
-      baseError) /
-    epsilon;
-
-  const dDist =
-    (computeTotalError(
+  return {
+    dScale: gradientForParam(
       correspondences,
       transform,
-      { ...cameraPos, z: cameraPos.z + epsilon },
+      cameraPos,
       cameraTarget,
-      params
-    ) -
-      baseError) /
-    epsilon;
-
-  return { dScale, dRoll, dTx, dTy, dDist };
+      params,
+      baseError,
+      "scale",
+      EPSILONS.scale
+    ),
+    dRotateX: gradientForParam(
+      correspondences,
+      transform,
+      cameraPos,
+      cameraTarget,
+      params,
+      baseError,
+      "rotateX",
+      EPSILONS.rotate
+    ),
+    dRotateY: gradientForParam(
+      correspondences,
+      transform,
+      cameraPos,
+      cameraTarget,
+      params,
+      baseError,
+      "rotateY",
+      EPSILONS.rotate
+    ),
+    dRotateZ: gradientForParam(
+      correspondences,
+      transform,
+      cameraPos,
+      cameraTarget,
+      params,
+      baseError,
+      "rotateZ",
+      EPSILONS.rotate
+    ),
+    dTranslateX: gradientForParam(
+      correspondences,
+      transform,
+      cameraPos,
+      cameraTarget,
+      params,
+      baseError,
+      "translateX",
+      EPSILONS.translate
+    ),
+    dTranslateY: gradientForParam(
+      correspondences,
+      transform,
+      cameraPos,
+      cameraTarget,
+      params,
+      baseError,
+      "translateY",
+      EPSILONS.translate
+    ),
+    dTranslateZ: gradientForParam(
+      correspondences,
+      transform,
+      cameraPos,
+      cameraTarget,
+      params,
+      baseError,
+      "translateZ",
+      EPSILONS.translate
+    ),
+    dCameraX:
+      (computeTotalError(
+        correspondences,
+        transform,
+        { ...cameraPos, x: cameraPos.x + EPSILONS.camera },
+        cameraTarget,
+        params
+      ) -
+        baseError) /
+      EPSILONS.camera,
+    dCameraY:
+      (computeTotalError(
+        correspondences,
+        transform,
+        { ...cameraPos, y: cameraPos.y + EPSILONS.camera },
+        cameraTarget,
+        params
+      ) -
+        baseError) /
+      EPSILONS.camera,
+    dCameraZ:
+      (computeTotalError(
+        correspondences,
+        transform,
+        { ...cameraPos, z: cameraPos.z + EPSILONS.camera },
+        cameraTarget,
+        params
+      ) -
+        baseError) /
+      EPSILONS.camera,
+  };
 }
 
 function computeLandmarkErrors(
@@ -346,13 +444,36 @@ function computeLandmarkErrors(
   return errors;
 }
 
-function enforceScaleBounds(
+function enforceBounds(
   transform: AlignmentTransform3D,
-  bounds: [number, number]
+  config: SolverConfig
 ): AlignmentTransform3D {
   return {
-    ...transform,
-    scale: Math.max(bounds[0], Math.min(bounds[1], transform.scale)),
+    scale: Math.max(config.scaleRange[0], Math.min(config.scaleRange[1], transform.scale)),
+    rotateX: Math.max(
+      config.rotationRange[0],
+      Math.min(config.rotationRange[1], transform.rotateX)
+    ),
+    rotateY: Math.max(
+      config.rotationRange[0],
+      Math.min(config.rotationRange[1], transform.rotateY)
+    ),
+    rotateZ: Math.max(
+      config.rotationRange[0],
+      Math.min(config.rotationRange[1], transform.rotateZ)
+    ),
+    translateX: Math.max(
+      config.translationRange[0],
+      Math.min(config.translationRange[1], transform.translateX)
+    ),
+    translateY: Math.max(
+      config.translationRange[0],
+      Math.min(config.translationRange[1], transform.translateY)
+    ),
+    translateZ: Math.max(
+      config.translationRange[0],
+      Math.min(config.translationRange[1], transform.translateZ)
+    ),
   };
 }
 
