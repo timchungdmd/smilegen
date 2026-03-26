@@ -277,18 +277,20 @@ function inverseLandmarkTransform(
   }
   const { scale, rotateX, rotateY, rotateZ, translateX, translateY, translateZ } = transform;
 
-  const afterTranslate = new THREE.Vector3(
-    worldPoint.x - translateX,
-    worldPoint.y - translateY,
-    worldPoint.z - translateZ
-  );
+  const matrix = new THREE.Matrix4();
+  matrix.makeScale(scale, scale, scale);
+  const rotMatrix = new THREE.Matrix4();
+  const euler = new THREE.Euler(rotateX, rotateY, rotateZ, 'XYZ');
+  rotMatrix.makeRotationFromEuler(euler);
+  matrix.multiply(rotMatrix);
+  matrix.setPosition(translateX, translateY, translateZ);
 
-  const invEuler = new THREE.Euler(-rotateX, -rotateY, -rotateZ, 'ZYX');
-  const afterRotation = afterTranslate.clone().applyEuler(invEuler);
+  const invMatrix = matrix.invert();
 
-  const afterScale = afterRotation.clone().divideScalar(scale);
+  const result = new THREE.Vector3(worldPoint.x, worldPoint.y, worldPoint.z);
+  result.applyMatrix4(invMatrix);
 
-  return { x: afterScale.x + center.x, y: afterScale.y + center.y, z: afterScale.z + center.z };
+  return { x: result.x + center.x, y: result.y + center.y, z: result.z + center.z };
 }
 
 // ─── Mesh components ─────────────────────────────────────────────────
@@ -470,18 +472,18 @@ onPointerLeave={() => {
       </group>
     );
   })}
-        {hoverPoint && activeLandmark && (
-          <mesh position={applyLandmarkTransform({ x: hoverPoint.x, y: hoverPoint.y, z: hoverPoint.z }, center, transform)}>
-            <sphereGeometry args={[0.5, 16, 16]} />
-            <meshStandardMaterial
-              color={activeLandmark.color}
-              transparent
-              opacity={0.5}
-              emissive={activeLandmark.color}
-              emissiveIntensity={0.3}
-            />
-          </mesh>
-        )}
+{hoverPoint && activeLandmark && (
+            <mesh position={[hoverPoint.x, hoverPoint.y, hoverPoint.z]}>
+              <sphereGeometry args={[0.5, 16, 16]} />
+              <meshStandardMaterial
+                color={activeLandmark.color}
+                transparent
+                opacity={0.5}
+                emissive={activeLandmark.color}
+                emissiveIntensity={0.3}
+              />
+            </mesh>
+          )}
       </>
     );
   }
