@@ -72,6 +72,7 @@ export function solveAlignment(
           translateZ: 0,
         },
         initialCameraPos,
+        centroid,
         cfg
       );
 
@@ -89,6 +90,7 @@ export function solveAlignment(
     correspondences,
     bestTransform,
     bestCameraPos,
+    centroid,
     projectionParams
   );
 
@@ -163,6 +165,7 @@ function refineAlignment(
   params: ProjectionParams,
   initialTransform: AlignmentTransform3D,
   initialCameraPos: { x: number; y: number; z: number },
+  cameraTarget: { x: number; y: number; z: number },
   config: SolverConfig
 ): {
   transform: AlignmentTransform3D;
@@ -175,6 +178,7 @@ function refineAlignment(
     correspondences,
     transform,
     cameraPos,
+    cameraTarget,
     params
   );
 
@@ -183,6 +187,7 @@ function refineAlignment(
       correspondences,
       transform,
       cameraPos,
+      cameraTarget,
       params
     );
 
@@ -192,7 +197,7 @@ function refineAlignment(
     transform.translateY -= gradients.dTy * config.learningRate;
     cameraPos.z -= gradients.dDist * config.learningRate;
 
-    const error = computeTotalError(correspondences, transform, cameraPos, params);
+    const error = computeTotalError(correspondences, transform, cameraPos, cameraTarget, params);
 
     if (Math.abs(prevError - error) < config.convergenceThreshold) {
       break;
@@ -207,6 +212,7 @@ function computeTotalError(
   correspondences: LandmarkCorrespondence[],
   transform: AlignmentTransform3D,
   cameraPos: { x: number; y: number; z: number },
+  cameraTarget: { x: number; y: number; z: number },
   params: ProjectionParams
 ): number {
   let totalError = 0;
@@ -217,7 +223,7 @@ function computeTotalError(
     const projected = project3Dto2D(
       transformed,
       cameraPos,
-      { x: 0, y: 0, z: 0 },
+      cameraTarget,
       { x: 0, y: 1, z: 0 },
       params
     );
@@ -237,6 +243,7 @@ function computeGradients(
   correspondences: LandmarkCorrespondence[],
   transform: AlignmentTransform3D,
   cameraPos: { x: number; y: number; z: number },
+  cameraTarget: { x: number; y: number; z: number },
   params: ProjectionParams,
   epsilon = 0.001
 ): {
@@ -250,6 +257,7 @@ function computeGradients(
     correspondences,
     transform,
     cameraPos,
+    cameraTarget,
     params
   );
 
@@ -258,6 +266,7 @@ function computeGradients(
       correspondences,
       { ...transform, scale: transform.scale + epsilon },
       cameraPos,
+      cameraTarget,
       params
     ) -
       baseError) /
@@ -268,6 +277,7 @@ function computeGradients(
       correspondences,
       { ...transform, rotateZ: transform.rotateZ + epsilon },
       cameraPos,
+      cameraTarget,
       params
     ) -
       baseError) /
@@ -278,6 +288,7 @@ function computeGradients(
       correspondences,
       { ...transform, translateX: transform.translateX + epsilon },
       cameraPos,
+      cameraTarget,
       params
     ) -
       baseError) /
@@ -288,6 +299,7 @@ function computeGradients(
       correspondences,
       { ...transform, translateY: transform.translateY + epsilon },
       cameraPos,
+      cameraTarget,
       params
     ) -
       baseError) /
@@ -298,6 +310,7 @@ function computeGradients(
       correspondences,
       transform,
       { ...cameraPos, z: cameraPos.z + epsilon },
+      cameraTarget,
       params
     ) -
       baseError) /
@@ -310,6 +323,7 @@ function computeLandmarkErrors(
   correspondences: LandmarkCorrespondence[],
   transform: AlignmentTransform3D,
   cameraPos: { x: number; y: number; z: number },
+  cameraTarget: { x: number; y: number; z: number },
   params: ProjectionParams
 ): Map<string, number> {
   const errors = new Map<string, number>();
@@ -319,7 +333,7 @@ function computeLandmarkErrors(
     const projected = project3Dto2D(
       transformed,
       cameraPos,
-      { x: 0, y: 0, z: 0 },
+      cameraTarget,
       { x: 0, y: 1, z: 0 },
       params
     );
