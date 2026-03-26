@@ -7,11 +7,24 @@ import type { GeneratedVariantDesign } from "../engine/designEngine";
 import { detectCollisions } from "../geometry/collisionDetector";
 import { useDesignStore } from "../../store/useDesignStore";
 import { useImportStore } from "../../store/useImportStore";
-import { createToothMaterial } from "./materials/toothMaterial";
+import { useCanvasStore } from "../../store/useCanvasStore";
 import { DentalLighting } from "./DentalLighting";
-import { GimbalTooth } from "./GimbalTooth";
-import { useViewportStore, type ScanReferencePoints } from "../../store/useViewportStore";
-import { resolvePhotoAlignedView } from "../alignment/photoAlignment";
+import { InteractiveTooth } from "./InteractiveTooth";
+import { InteractiveArchCurve } from "./InteractiveArchCurve";
+import { useViewportStore } from "../../store/useViewportStore";
+import { useAlignmentStore, useAlignmentStore as useAlignmentStoreRaw } from "../../store/useAlignmentStore";
+import { resolveLandmarkAlignmentView } from "../alignment/photoAlignment";
+import { getScanLandmarkVisualState } from "./landmarkVisuals";
+import { getScanRenderStyle } from "./scanRenderStyle";
+import {
+  getImportedScanNoticeLabel,
+  shouldShowImportedScanNotice,
+} from "./importedScanNotice";
+import { getImportedScanSignature } from "./importedScanSignature";
+import { shouldRenderImportedPhotoOverlay } from "./viewerContent";
+import { PhotoOverlay } from "../overlay/PhotoOverlay";
+import { shouldEnablePhotoOverlayPointerEvents } from "../overlay/photoOverlayInteractionMode";
+import { ErrorBoundary } from "../layout/ErrorBoundary";
 
 interface SceneCanvasProps {
   archScanMesh?: ParsedStlMesh | null;
@@ -41,6 +54,51 @@ const CAMERA_PRESETS: CameraPreset[] = [
 
 const DEFAULT_POSITION = new THREE.Vector3(0, 8, 30);
 const DEFAULT_TARGET = new THREE.Vector3(0, 0, 0);
+
+// ─── Utility: Compute visual centroid from scan bounds and teeth ─────────
+// IMPORTANT: The scan mesh is centered at origin by StlMeshView, so scan
+// contributes position (0,0,0) to the centroid calculation, not its original bounds center.
+function getVisualCentroidFromBounds(
+  bounds: ParsedStlMesh["bounds"] | null,
+  teeth: GeneratedVariantDesign["teeth"] | undefined
+): THREE.Vector3 {
+  const points: THREE.Vector3[] = [];
+  
+  // Scan is centered at origin by StlMeshView, so its world position is (0,0,0)
+  // Only add it if there's no teeth - otherwise let teeth dominate the centroid
+  if (bounds && (!teeth || teeth.length === 0)) {
+    // When only scan exists, rotation should be around the scan's center (which is at origin after centering)
+    points.push(new THREE.Vector3(0, 0, 0));
+  }
+  
+  // Add teeth centroid if teeth exist - this is the primary rotation center when teeth are present
+  if (teeth && teeth.length > 0) {
+    const teethCenter = new THREE.Vector3();
+    teeth.forEach(t => {
+      teethCenter.add(new THREE.Vector3(t.positionX, t.positionY, t.positionZ ?? 0));
+    });
+    teethCenter.divideScalar(teeth.length);
+    points.push(teethCenter);
+  }
+  
+  // Return average of all points, or origin if none
+  if (points.length === 0) return new THREE.Vector3(0, 0, 0);
+  const centroid = new THREE.Vector3();
+  points.forEach(p => centroid.add(p));
+  return centroid.divideScalar(points.length);
+}
+
+// Hook version for use in components
+function useVisualCentroid(
+  archScanMesh: ParsedStlMesh | null | undefined,
+  activeVariant: GeneratedVariantDesign | null | undefined
+): THREE.Vector3 {
+  return useMemo(() => {
+    const bounds = archScanMesh?.bounds ?? null;
+    const teeth = activeVariant?.teeth;
+    return getVisualCentroidFromBounds(bounds, teeth);
+  }, [archScanMesh?.bounds, activeVariant?.teeth]);
+}
 
 // ─── Animated camera controller ──────────────────────────────────────
 
@@ -106,9 +164,40 @@ function easeInOutCubic(t: number): number {
 
 // ─── Auto-framing ────────────────────────────────────────────────────
 
-function AutoFrame({ bounds }: { bounds: ParsedStlMesh["bounds"] | null }) {
+function AutoFrame({
+  bounds,
+  teeth,
+  controlsRef,
+}: {
+  bounds: ParsedStlMesh["bounds"] | null;
+  teeth: GeneratedVariantDesign["teeth"] | undefined;
+  controlsRef: React.RefObject<any>;
+}) {
   const { camera } = useThree();
   const hasFramed = useRef(false);
+  const prevCentroid = useRef<THREE.Vector3 | null>(null);
+
+  // Compute visual centroid based on scan bounds and teeth positions
+  const visualCentroid = useMemo(() => {
+    const centroid = getVisualCentroidFromBounds(bounds, teeth);
+    // Debug: log centroid calculation
+    if (bounds) {
+      const scanCenter = new THREE.Vector3(
+        (bounds.minX + bounds.maxX) / 2,
+        (bounds.minY + bounds.maxY) / 2,
+        (bounds.minZ + bounds.maxZ) / 2
+      );
+      const teethCount = teeth?.length ?? 0;
+      console.log('[SceneCanvas] Visual centroid:', { 
+        x: centroid.x.toFixed(2), 
+        y: centroid.y.toFixed(2), 
+        z: centroid.z.toFixed(2),
+        teethCount,
+        scanCenter: { x: scanCenter.x.toFixed(2), y: scanCenter.y.toFixed(2), z: scanCenter.z.toFixed(2) }
+      });
+    }
+    return centroid;
+  }, [bounds, teeth]);
 
   useEffect(() => {
     if (!bounds || hasFramed.current) return;
@@ -116,10 +205,28 @@ function AutoFrame({ bounds }: { bounds: ParsedStlMesh["bounds"] | null }) {
 
     const size = Math.max(bounds.width, bounds.depth, bounds.height);
     const dist = size * 1.8;
-    camera.position.set(0, size * 0.3, dist);
-    camera.lookAt(0, 0, 0);
+    camera.position.set(visualCentroid.x, visualCentroid.y + size * 0.3, visualCentroid.z + dist);
+    camera.lookAt(visualCentroid);
     camera.updateProjectionMatrix();
-  }, [bounds, camera]);
+
+    // Sync TrackballControls target to visual centroid so rotation
+    // is around the combined center of scan + teeth
+    if (controlsRef.current) {
+      controlsRef.current.target.copy(visualCentroid);
+      controlsRef.current.update();
+    }
+    prevCentroid.current = visualCentroid.clone();
+  }, [bounds, visualCentroid, camera, controlsRef]);
+
+  // Update controls target when visual centroid changes (e.g., teeth moved)
+  useEffect(() => {
+    if (!controlsRef.current || !prevCentroid.current) return;
+    if (!visualCentroid.equals(prevCentroid.current)) {
+      controlsRef.current.target.copy(visualCentroid);
+      controlsRef.current.update();
+      prevCentroid.current = visualCentroid.clone();
+    }
+  }, [visualCentroid, controlsRef]);
 
   // Reset flag when bounds change (new mesh loaded)
   useEffect(() => {
@@ -136,14 +243,28 @@ function StlMeshView({
   color = "#e8ddd0",
   opacity = 1,
   metalness = 0.1,
-  roughness = 0.6
+  roughness = 0.6,
+  emissive = "#111827",
+  emissiveIntensity = 0,
+  pickEnabled = false,
+  onPickPoint,
+  landmarks = [],
+  activeLandmarkId = null,
 }: {
   mesh: ParsedStlMesh;
   color?: string;
   opacity?: number;
   metalness?: number;
   roughness?: number;
+  emissive?: string;
+  emissiveIntensity?: number;
+  pickEnabled?: boolean;
+  onPickPoint?: (point: { x: number; y: number; z: number }) => void;
+  landmarks?: ReturnType<typeof useAlignmentStore.getState>["landmarks"];
+  activeLandmarkId?: ReturnType<typeof useAlignmentStore.getState>["activeLandmarkId"];
 }) {
+  const [hoverPoint, setHoverPoint] = useState<THREE.Vector3 | null>(null);
+  const activeLandmark = landmarks.find((landmark) => landmark.id === activeLandmarkId) ?? null;
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     const vertexCount = mesh.triangles.length * 3;
@@ -187,130 +308,97 @@ function StlMeshView({
   }, [mesh.bounds]);
 
   return (
-    <mesh geometry={geometry} position={[-center.x, -center.y, -center.z]}>
-      <meshStandardMaterial
-        color={color}
-        metalness={metalness}
-        roughness={roughness}
-        transparent={opacity < 1}
-        opacity={opacity}
-        side={THREE.DoubleSide}
-      />
-    </mesh>
-  );
-}
+    <>
+      <mesh
+        geometry={geometry}
+        position={[-center.x, -center.y, -center.z]}
+        onPointerDown={(event) => {
+          if (!pickEnabled || !onPickPoint) return;
+          event.stopPropagation();
+          onPickPoint({
+            x: event.point.x + center.x,
+            y: event.point.y + center.y,
+            z: event.point.z + center.z,
+          });
+        }}
+        onPointerMove={(event) => {
+          if (pickEnabled && activeLandmarkId) {
+            setHoverPoint(event.point.clone());
+          } else {
+            setHoverPoint(null);
+          }
+        }}
+        onPointerLeave={() => setHoverPoint(null)}
+      >
+        <meshPhysicalMaterial
+          color={color}
+          metalness={metalness}
+          roughness={roughness}
+          emissive={emissive}
+          emissiveIntensity={emissiveIntensity}
+          reflectivity={0.18}
+          clearcoat={0.08}
+          clearcoatRoughness={0.6}
+          transparent={opacity < 1}
+          opacity={opacity}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      {landmarks
+        .filter((landmark) => landmark.modelCoord)
+        .map((landmark) => {
+          const visual = getScanLandmarkVisualState(landmark, activeLandmarkId);
+          return (
+            <group
+              key={landmark.id}
+              position={[
+                landmark.modelCoord!.x - center.x,
+                landmark.modelCoord!.y - center.y,
+                landmark.modelCoord!.z - center.z,
+              ]}
+            >
+              {visual.showHalo && (
+                <mesh>
+                  <sphereGeometry args={[visual.haloRadius, 16, 16]} />
+                  <meshStandardMaterial
+                    color={landmark.color}
+                    transparent
+                    opacity={visual.haloOpacity}
+                    emissive={landmark.color}
+                    emissiveIntensity={0.15}
+                  />
+                </mesh>
+              )}
+              <mesh>
+                <sphereGeometry args={[visual.baseRadius, 12, 12]} />
+                <meshStandardMaterial
+                  color={landmark.color}
+                  transparent={visual.markerOpacity < 1}
+                  opacity={visual.markerOpacity}
+                  emissive={landmark.color}
+                  emissiveIntensity={visual.emissiveIntensity}
+                />
+              </mesh>
+              </group>
+            );
+          })}
+        {hoverPoint && activeLandmark && (
+          <mesh position={[hoverPoint.x - center.x, hoverPoint.y - center.y, hoverPoint.z - center.z]}>
+            <sphereGeometry args={[0.5, 16, 16]} />
+            <meshStandardMaterial
+              color={activeLandmark.color}
+              transparent
+              opacity={0.5}
+              emissive={activeLandmark.color}
+              emissiveIntensity={0.3}
+            />
+          </mesh>
+        )}
+      </>
+    );
+  }
 
-function ToothMesh({
-  tooth,
-  selected,
-  hasCollision,
-  onSelect,
-  suppressPosition = false,
-}: {
-  tooth: GeneratedVariantDesign["teeth"][number];
-  selected: boolean;
-  hasCollision: boolean;
-  onSelect: () => void;
-  /** When true, renders at local origin [0,0,0] — parent GimbalTooth group handles positioning. */
-  suppressPosition?: boolean;
-}) {
-  const meshRef = useRef<THREE.Mesh>(null);
-
-  const material = useMemo(
-    () => createToothMaterial({ shade: (tooth as any).shadeId as "A1" | "A2" | "A3" | "B1" | "B2" }),
-    [(tooth as any).shadeId]
-  );
-  useEffect(() => () => { material.dispose(); }, [material]);
-
-  const posZ = (tooth as any).positionZ ?? 0;
-  const archAngle = (tooth as any).archAngle ?? 0;
-
-  const geometry = useMemo(() => {
-    if (tooth.previewTriangles && tooth.previewTriangles.length > 0) {
-      const geo = new THREE.BufferGeometry();
-      const vertexCount = tooth.previewTriangles.length * 3;
-      const positions = new Float32Array(vertexCount * 3);
-      const normals = new Float32Array(vertexCount * 3);
-
-      for (let i = 0; i < tooth.previewTriangles.length; i++) {
-        const tri = tooth.previewTriangles[i];
-        const verts = [tri.a, tri.b, tri.c];
-
-        const edge1 = new THREE.Vector3(tri.b.x - tri.a.x, tri.b.y - tri.a.y, tri.b.z - tri.a.z);
-        const edge2 = new THREE.Vector3(tri.c.x - tri.a.x, tri.c.y - tri.a.y, tri.c.z - tri.a.z);
-        const normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
-
-        for (let j = 0; j < 3; j++) {
-          const idx = (i * 3 + j) * 3;
-          positions[idx] = verts[j].x;
-          positions[idx + 1] = verts[j].y;
-          positions[idx + 2] = verts[j].z;
-          normals[idx] = normal.x;
-          normals[idx + 1] = normal.y;
-          normals[idx + 2] = normal.z;
-        }
-      }
-
-      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-      geo.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
-      geo.computeBoundingBox();
-      return geo;
-    }
-
-    const w = tooth.width / 2;
-    const h = tooth.height / 2;
-    const d = tooth.depth / 2;
-    const shape = new THREE.Shape();
-    const r = Math.min(w, h) * 0.25;
-    shape.moveTo(-w + r, -h);
-    shape.lineTo(w - r, -h);
-    shape.quadraticCurveTo(w, -h, w, -h + r);
-    shape.lineTo(w, h - r);
-    shape.quadraticCurveTo(w, h, w - r, h);
-    shape.lineTo(-w + r, h);
-    shape.quadraticCurveTo(-w, h, -w, h - r);
-    shape.lineTo(-w, -h + r);
-    shape.quadraticCurveTo(-w, -h, -w + r, -h);
-
-    const settings = { depth: d * 2, bevelEnabled: true, bevelSize: 0.15, bevelThickness: 0.1, bevelSegments: 3 };
-    return new THREE.ExtrudeGeometry(shape, settings);
-  }, [tooth.width, tooth.height, tooth.depth, tooth.previewTriangles]);
-
-  // Dispose GPU memory when geometry is replaced or component unmounts
-  useEffect(() => () => { geometry.dispose(); }, [geometry]);
-
-  const useRealMesh = tooth.previewTriangles && tooth.previewTriangles.length > 0;
-
-  return (
-    <mesh
-      ref={meshRef}
-      geometry={geometry}
-      position={suppressPosition || useRealMesh ? [0, 0, 0] : [tooth.positionX, tooth.positionY, posZ]}
-      rotation={suppressPosition || useRealMesh ? [0, 0, 0] : [0, archAngle, 0]}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect();
-      }}
-      onPointerOver={(e) => {
-        e.stopPropagation();
-        if (meshRef.current) {
-          document.body.style.cursor = "pointer";
-        }
-      }}
-      onPointerOut={() => {
-        document.body.style.cursor = "default";
-      }}
-    >
-      {/* PBR enamel material; override color for selection/collision states */}
-      <primitive
-        object={material}
-        attach="material"
-        color={hasCollision ? "#ef476f" : selected ? "#00b4d8" : undefined}
-        emissive={hasCollision ? "#4d0015" : selected ? "#003d4d" : "#000000"}
-      />
-    </mesh>
-  );
-}
+// Original ToothMesh deprecated in favor of InteractiveTooth Phase B implementation.
 
 // ─── Scene background controller ─────────────────────────────────────
 
@@ -349,109 +437,7 @@ function AspectReporter({ onAspect }: { onAspect: (aspect: number) => void }) {
   return null;
 }
 
-// ─── Photo-aligned camera snapper (runs inside Canvas) ────────────
-/**
- * Directly sets the camera to the photo-aligned position when photo mode
- * is active.  Runs inside the <Canvas> so it has access to useThree().
- * Unlike the animation-based approach, this handles:
- *   - Syncing TrackballControls target so they don't fight
- *   - Re-triggering when photoAspect becomes available (race condition fix)
- *   - Disabling AutoFrame when photo mode is on
- */
-function PhotoAligner({
-  active,
-  refs,
-  scanBounds,
-  photoAspect,
-  controlsRef,
-}: {
-  active: boolean;
-  refs: ScanReferencePoints | null;
-  scanBounds: ParsedStlMesh["bounds"] | null;
-  photoAspect: number;
-  controlsRef: React.RefObject<any>;
-}) {
-  const { camera, size } = useThree();
-
-  useEffect(() => {
-    if (!active || !refs || !scanBounds) {
-      if ("clearViewOffset" in camera) {
-        camera.clearViewOffset();
-        camera.updateProjectionMatrix();
-      }
-      return;
-    }
-
-    let cancelled = false;
-
-    const applyAlignment = async () => {
-      const canvasAspect = size.width / size.height;
-      const result = await resolvePhotoAlignedView(refs, scanBounds, canvasAspect, 45, photoAspect);
-      if (cancelled) {
-        return;
-      }
-
-      if (!result) {
-        if ("clearViewOffset" in camera) {
-          camera.clearViewOffset();
-          camera.updateProjectionMatrix();
-        }
-        return;
-      }
-
-      const dist = result.position.distanceTo(result.target);
-      if (controlsRef.current) {
-        controlsRef.current.enabled = false;
-      }
-
-      // Directly set camera — no animation for alignment (instant snap)
-      camera.position.copy(result.position);
-      camera.up.copy(result.up);
-      camera.lookAt(result.target);
-      camera.setViewOffset(
-        size.width,
-        size.height,
-        (-result.principalPointNdc.x * size.width) / 2,
-        (result.principalPointNdc.y * size.height) / 2,
-        size.width,
-        size.height
-      );
-      camera.updateProjectionMatrix();
-
-      if (controlsRef.current) {
-        controlsRef.current.target.copy(result.target);
-        controlsRef.current.maxDistance = Math.max(200, dist * 2);
-        controlsRef.current.update();
-        controlsRef.current.enabled = true;
-      }
-    };
-
-    void applyAlignment();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [active, refs, scanBounds, photoAspect, camera, size, controlsRef]);
-
-  return null;
-}
-
-function ArchCurveWireframe({ archHalfWidth = 35, archDepth = 15 }: { archHalfWidth?: number; archDepth?: number }) {
-  const points = useMemo(() => {
-    const pts: [number, number, number][] = [];
-    const steps = 50;
-    for (let i = 0; i <= steps; i++) {
-      const t = (i / steps) * 2 - 1;
-      const x = t * archHalfWidth;
-      const tNorm = Math.min(1, Math.abs(t));
-      const z = -archDepth * tNorm * tNorm;
-      pts.push([x, 0, z]);
-    }
-    return pts;
-  }, [archHalfWidth, archDepth]);
-
-  return <Line points={points} color="#00b4d8" lineWidth={1.5} opacity={0.4} transparent />;
-}
+// ArchCurveWireframe replaced by InteractiveArchCurve phase 2 component.
 
 // SceneLighting replaced by DentalLighting — see DentalLighting.tsx
 
@@ -486,40 +472,74 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
   const archDepthOverride = useDesignStore((s) => s.archDepthOverride);
   const archHalfWidthOverride = useDesignStore((s) => s.archHalfWidthOverride);
   const moveTooth = useDesignStore((s) => s.moveTooth);
-  const gimbalMode = useViewportStore((s) => s.gimbalMode);
+  const meshOpacity = useCanvasStore((s) => s.meshOpacity);
+  const designTab = useCanvasStore((s) => s.designTab);
   const hiddenLayers = useViewportStore((s) => s.hiddenLayers);
 
-  // Photo-in-3D overlay state
-  const showPhotoIn3D = useViewportStore((s) => s.showPhotoIn3D);
-  const setShowPhotoIn3D = useViewportStore((s) => s.setShowPhotoIn3D);
-  const overlayOpacity = useViewportStore((s) => s.overlayOpacity);
-  const setOverlayOpacity = useViewportStore((s) => s.setOverlayOpacity);
-  const showMidline = useViewportStore((s) => s.showMidline);
-  const setShowMidline = useViewportStore((s) => s.setShowMidline);
-  const showSmileArc = useViewportStore((s) => s.showSmileArc);
-  const setShowSmileArc = useViewportStore((s) => s.setShowSmileArc);
-  const showGingivalLine = useViewportStore((s) => s.showGingivalLine);
-  const setShowGingivalLine = useViewportStore((s) => s.setShowGingivalLine);
-  const scanReferencePoints = useViewportStore((s) => s.scanReferencePoints);
+  const isAlignmentMode = useAlignmentStore((s) => s.isAlignmentMode);
+  const activeSurface = useAlignmentStore((s) => s.activeSurface);
+  const activeLandmarkId = useAlignmentStore((s) => s.activeLandmarkId);
+  const scanInteractionMode = useAlignmentStore((s) => s.scanInteractionMode);
+  const landmarks = useAlignmentStore((s) => s.landmarks);
+  const solvedView = useAlignmentStore((s) => s.solvedView);
+  const setModelLandmark = useAlignmentStore((s) => s.setModelLandmark);
+  const setActiveLandmark = useAlignmentStore((s) => s.setActiveLandmark);
+  const setActiveSurface = useAlignmentStore((s) => s.setActiveSurface);
+  const setScanInteractionMode = useAlignmentStore((s) => s.setScanInteractionMode);
+  const setSolvedView = useAlignmentStore((s) => s.setSolvedView);
+  const clearSolvedView = useAlignmentStore((s) => s.clearSolvedView);
+  const canSolve = useAlignmentStore((s) => s.canSolve);
 
   // Ref to the TrackballControls so we can sync target after camera animation
   const controlsRef = useRef<any>(null);
   const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
   const photoUrl = uploadedPhotos[0]?.url ?? null;
+  const primaryPhoto = uploadedPhotos[0] ?? null;
+  const shouldShowPhotoOverlay = shouldRenderImportedPhotoOverlay(primaryPhoto);
+  const photoOverlayPointerEventsEnabled = shouldEnablePhotoOverlayPointerEvents({
+    designTab,
+    isAlignmentMode,
+    activeSurface: activeSurface ?? "photo",
+  });
+  const importedScanSignature = useMemo(
+    () => getImportedScanSignature(archScanMesh),
+    [archScanMesh]
+  );
+  const scanRenderStyle = useMemo(
+    () =>
+      getScanRenderStyle({
+        meshOpacity,
+        hasActiveVariant: Boolean(activeVariant),
+      }),
+    [activeVariant, meshOpacity]
+  );
+  const activeLandmark = landmarks.find((landmark) => landmark.id === activeLandmarkId) ?? null;
+  const completedPairCount = landmarks.filter(
+    (landmark) => landmark.photoCoord !== null && landmark.modelCoord !== null
+  ).length;
+
+  const [photoBgAspect, setPhotoBgAspect] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!photoUrl) {
+      setPhotoBgAspect(null);
+      return;
+    }
+
+    const img = new Image();
+    img.onload = () => {
+      if (img.naturalHeight > 0) {
+        setPhotoBgAspect(img.naturalWidth / img.naturalHeight);
+      }
+    };
+    img.src = photoUrl;
+  }, [photoUrl]);
 
   // Canvas aspect ratio (updated by AspectReporter inside the Canvas)
   const [canvasAspect, setCanvasAspect] = useState(1.5);
 
-  // Photo background aspect ratio (set via onLoad on the background <img>).
-  // Needed to correct the letterbox/pillarbox NDC mapping in computePhotoAlignedCamera.
-  const [photoBgAspect, setPhotoBgAspect] = useState<number | null>(null);
-
-  // Reset the cached aspect when the photo changes
-  useEffect(() => {
-    setPhotoBgAspect(null);
-  }, [photoUrl]);
-
   const [showMeasurements, setShowMeasurements] = useState(false);
+  const [scanLoadNotice, setScanLoadNotice] = useState<string | null>(null);
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -556,19 +576,31 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
   }, [collisions]);
 
   const goToPreset = useCallback((preset: CameraPreset) => {
+    const bounds = archScanMesh?.bounds ?? null;
+    const teeth = activeVariant?.teeth;
+    const centroid = getVisualCentroidFromBounds(bounds, teeth);
     const scale = archScanMesh ? Math.max(archScanMesh.bounds.width, archScanMesh.bounds.depth, archScanMesh.bounds.height) * 0.04 : 1;
+    const presetPos = new THREE.Vector3(...preset.position).multiplyScalar(scale);
+    // Offset preset position by centroid so camera looks at visual center
+    presetPos.add(centroid);
     setAnimTarget({
-      pos: new THREE.Vector3(...preset.position).multiplyScalar(scale),
-      up: new THREE.Vector3(...(preset.up ?? [0, 1, 0]))
+      pos: presetPos,
+      up: new THREE.Vector3(...(preset.up ?? [0, 1, 0])),
+      lookAt: centroid
     });
-  }, [archScanMesh]);
+  }, [archScanMesh, activeVariant]);
 
   const resetView = useCallback(() => {
+    // Compute visual centroid for rotation target
+    const bounds = archScanMesh?.bounds ?? null;
+    const teeth = activeVariant?.teeth;
+    const centroid = getVisualCentroidFromBounds(bounds, teeth);
     if (archScanMesh) {
       const size = Math.max(archScanMesh.bounds.width, archScanMesh.bounds.depth, archScanMesh.bounds.height);
       setAnimTarget({
-        pos: new THREE.Vector3(0, size * 0.3, size * 1.8),
-        up: new THREE.Vector3(0, 1, 0)
+        pos: new THREE.Vector3(centroid.x, centroid.y + size * 0.3, centroid.z + size * 1.8),
+        up: new THREE.Vector3(0, 1, 0),
+        lookAt: centroid
       });
     } else {
       setAnimTarget({
@@ -576,33 +608,52 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
         up: new THREE.Vector3(0, 1, 0)
       });
     }
-  }, [archScanMesh]);
+  }, [archScanMesh, activeVariant]);
 
-  /** Snap camera to the perspective-aligned photo view using stored reference points. */
-  const goToPhotoView = useCallback(async () => {
-    if (!scanReferencePoints?.centralR || !scanReferencePoints?.centralL || !archScanMesh) return;
-    // Use measured photo aspect if available; fall back to canvas aspect (no letterbox correction)
-    const effectivePhotoAspect = photoBgAspect ?? canvasAspect;
-    const result = await resolvePhotoAlignedView(
-      scanReferencePoints,
-      archScanMesh.bounds,
-      canvasAspect,
-      45,
-      effectivePhotoAspect
-    );
-    if (result) {
-      setAnimTarget({
-        pos: result.position,
-        up: result.up,
-        lookAt: result.target,
-      });
+  const lastImportedScanSignatureRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!importedScanSignature) {
+      lastImportedScanSignatureRef.current = null;
+      setScanLoadNotice(null);
+      return;
     }
-  }, [scanReferencePoints, archScanMesh, canvasAspect, photoBgAspect]);
 
-  // Photo alignment is now handled by the <PhotoAligner> component inside the
-  // Canvas, which has direct access to useThree() and the controls ref.
-  // It triggers when showPhotoIn3D becomes true and also when photoBgAspect
-  // becomes available (fixing the race condition).
+    const previousSignature = lastImportedScanSignatureRef.current;
+
+    if (previousSignature === importedScanSignature) {
+      return;
+    }
+
+    lastImportedScanSignatureRef.current = importedScanSignature;
+
+    if (
+      archScanMesh &&
+      shouldShowImportedScanNotice({
+        previousSignature,
+        nextSignature: importedScanSignature,
+        isAlignmentMode,
+      })
+    ) {
+      setScanLoadNotice(getImportedScanNoticeLabel(archScanMesh.name));
+    }
+
+    if (!isAlignmentMode) {
+      resetView();
+    }
+  }, [archScanMesh, importedScanSignature, isAlignmentMode, resetView]);
+
+  useEffect(() => {
+    if (!scanLoadNotice) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setScanLoadNotice(null);
+    }, 2200);
+
+    return () => window.clearTimeout(timeout);
+  }, [scanLoadNotice]);
 
   return (
     <div
@@ -633,74 +684,19 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
       ) : (
       <>
 
-      {/* Smile Window — persistent photo reference during 3D work */}
-      {photoUrl && !showPhotoIn3D && (
-        <div
-          style={{
-            position: "absolute",
-            top: 12,
-            left: 12,
-            width: 180,
-            height: 120,
-            borderRadius: 8,
-            overflow: "hidden",
-            border: "1px solid rgba(255,255,255,0.12)",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
-            zIndex: 10,
-            cursor: "pointer",
-            background: "#000",
-          }}
-          title="Click to toggle photo overlay"
-          onClick={() => useViewportStore.getState().setShowPhotoIn3D(true)}
-        >
-          <img
-            src={photoUrl}
-            alt="Patient photo"
-            style={{ width: "100%", height: "100%", objectFit: "cover", opacity: 0.9 }}
-          />
-        </div>
-      )}
-
-      {/* ── Photo background ────────────────────────────────────────────────────
-          Patient photo is rendered as a CSS img BEHIND the transparent WebGL
-          canvas so it fills the viewport as a fixed reference background.
-          The 3D scan is then overlaid on top via the transparent canvas.        */}
-      {showPhotoIn3D && photoUrl && (
-        <img
-          src={photoUrl}
-          alt=""
-          aria-hidden="true"
-          onLoad={(e) => {
-            const img = e.currentTarget;
-            if (img.naturalHeight > 0) {
-              setPhotoBgAspect(img.naturalWidth / img.naturalHeight);
-            }
-          }}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "contain",
-            objectPosition: "center",
-            opacity: overlayOpacity,
-            pointerEvents: "none",
-            userSelect: "none",
-            background: "#000",
-            zIndex: 0,
-          }}
-        />
-      )}
-
-      <Canvas shadows={{ type: THREE.PCFShadowMap }} gl={{ alpha: true }} style={{ position: "relative", zIndex: 1 }}>
+      <Canvas
+        shadows={{ type: THREE.PCFShadowMap }}
+        gl={{ alpha: true }}
+        style={{ position: "relative", zIndex: 1 }}
+      >
         {/* Controls scene transparency vs. solid dark background */}
-        <SceneBackground transparent={showPhotoIn3D} />
+        <SceneBackground transparent={false} />
         <AspectReporter onAspect={setCanvasAspect} />
 
         <PerspectiveCamera makeDefault position={[0, 8, 30]} fov={45} />
         <DentalLighting />
 
-        <AutoFrame bounds={archScanMesh?.bounds ?? null} />
+        <AutoFrame bounds={archScanMesh?.bounds ?? null} teeth={activeVariant?.teeth} controlsRef={controlsRef} />
 
         <CameraAnimator
           targetPos={animTarget?.pos ?? null}
@@ -710,47 +706,53 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
           onComplete={() => setAnimTarget(null)}
         />
 
-        {/* Snap camera to photo-aligned perspective when photo overlay is on */}
-        <PhotoAligner
-          active={showPhotoIn3D}
-          refs={scanReferencePoints}
-          scanBounds={archScanMesh?.bounds ?? null}
-          photoAspect={photoBgAspect ?? canvasAspect}
-          controlsRef={controlsRef}
-        />
-
         {archScanMesh && !hiddenLayers.has("arch-scan") && (
           <StlMeshView
             mesh={archScanMesh}
-            color="#5c7480"
-            opacity={activeVariant ? 0.35 : 0.9}
-            metalness={0.18}
-            roughness={0.65}
+            color={scanRenderStyle.color}
+            opacity={scanRenderStyle.opacity}
+            metalness={scanRenderStyle.metalness}
+            roughness={scanRenderStyle.roughness}
+            emissive={scanRenderStyle.emissive}
+            emissiveIntensity={scanRenderStyle.emissiveIntensity}
+            pickEnabled={
+              isAlignmentMode &&
+              activeSurface === "scan" &&
+              scanInteractionMode === "pick" &&
+              Boolean(activeLandmarkId)
+            }
+            landmarks={landmarks}
+            activeLandmarkId={activeLandmarkId}
+            onPickPoint={(point) => {
+              if (!activeLandmarkId) return;
+              setModelLandmark(activeLandmarkId, point.x, point.y, point.z);
+              // Auto-advance: find next unpaired landmark
+              const state = useAlignmentStoreRaw.getState();
+              const next = state.landmarks.find(
+                (l) => l.id !== activeLandmarkId && (!l.photoCoord || !l.modelCoord)
+              );
+              if (next) {
+                setActiveLandmark(next.id);
+                setActiveSurface("photo");
+              } else {
+                setScanInteractionMode("navigate");
+              }
+            }}
           />
         )}
 
         {!hiddenLayers.has("design-teeth") && activeVariant?.teeth.map((tooth) => (
-          <GimbalTooth
+          <InteractiveTooth
             key={tooth.toothId}
             tooth={tooth}
-            isSelected={tooth.toothId === selectedToothId}
-            gimbalMode={gimbalMode}
-            onTransformEnd={(id, dx, dy) =>
-              moveTooth(id, { deltaX: dx, deltaY: dy })
-            }
-          >
-            <ToothMesh
-              tooth={tooth}
-              selected={tooth.toothId === selectedToothId}
-              hasCollision={collisionToothIds.has(tooth.toothId)}
-              onSelect={() => onSelectTooth?.(tooth.toothId)}
-              suppressPosition
-            />
-          </GimbalTooth>
+            selected={tooth.toothId === selectedToothId}
+            hasCollision={collisionToothIds.has(tooth.toothId)}
+            onSelect={() => onSelectTooth?.(tooth.toothId)}
+          />
         ))}
 
         {activeVariant && !hiddenLayers.has("arch-curve") && (
-          <ArchCurveWireframe
+          <InteractiveArchCurve
             archHalfWidth={archHalfWidthOverride ?? (archScanMesh ? Math.max(20, Math.min(50, archScanMesh.bounds.width / 2)) : 35)}
             archDepth={archDepthOverride ?? (archScanMesh ? Math.max(8, Math.min(25, (archScanMesh.bounds.maxY - archScanMesh.bounds.minY) * 0.5)) : 15)}
           />
@@ -794,6 +796,27 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
         </GizmoHelper>
       </Canvas>
 
+      {shouldShowPhotoOverlay && primaryPhoto && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 2,
+            pointerEvents: photoOverlayPointerEventsEnabled ? "auto" : "none",
+          }}
+        >
+          <ErrorBoundary label="Photo Overlay">
+            <PhotoOverlay
+              photo={primaryPhoto}
+              activeVariant={activeVariant ?? null}
+              selectedToothId={selectedToothId ?? null}
+              onSelectTooth={onSelectTooth ?? (() => undefined)}
+              onMoveTooth={moveTooth}
+            />
+          </ErrorBoundary>
+        </div>
+      )}
+
       {/* Right-click context menu */}
       {contextMenu && (
         <div
@@ -809,17 +832,19 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
             zIndex: 100,
             border: "1px solid rgba(255,255,255,0.1)",
             boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+            // Prevent accidental activation on menu open
+            animation: "fadeIn 0.15s ease-out",
           }}
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Section: Camera Views */}
+          <div style={{ padding: "4px 12px", fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Camera Views
+          </div>
           {[
-            { label: "Reset View", action: resetView },
             { label: "Front", action: () => goToPreset(CAMERA_PRESETS[0]) },
             { label: "Back", action: () => goToPreset(CAMERA_PRESETS[1]) },
             { label: "Top", action: () => goToPreset(CAMERA_PRESETS[2]) },
-            { label: "3/4 View", action: () => goToPreset(CAMERA_PRESETS[6]) },
-            ...(scanReferencePoints && archScanMesh ? [{ label: "Align to Photo", action: goToPhotoView }] : []),
-            ...(showPhotoIn3D ? [{ label: "Hide Photo Overlay", action: () => useViewportStore.getState().setShowPhotoIn3D(false) }] : photoUrl ? [{ label: "Show Photo Overlay", action: () => useViewportStore.getState().setShowPhotoIn3D(true) }] : []),
           ].map((item, i) => (
             <button
               key={i}
@@ -841,58 +866,68 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
               {item.label}
             </button>
           ))}
-        </div>
-      )}
-
-      {/* Floating photo overlay controls */}
-      {showPhotoIn3D && (
-        <div style={{
-          position: "absolute",
-          bottom: 40,
-          left: 12,
-          background: "rgba(15, 20, 25, 0.85)",
-          backdropFilter: "blur(8px)",
-          borderRadius: 10,
-          padding: "10px 14px",
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          zIndex: 10,
-          border: "1px solid rgba(255,255,255,0.08)",
-          minWidth: 180,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>Photo Overlay</span>
+          
+          {/* Divider */}
+          <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
+          
+          {/* Special Actions */}
+          {([] as { label: string; action: () => void; icon?: string }[]).map((item, i) => (
             <button
-              onClick={() => setShowPhotoIn3D(false)}
-              style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, padding: 0 }}
-              title="Close photo overlay"
+              key={i}
+              onClick={() => { item.action(); setContextMenu(null); }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                width: "100%",
+                padding: "6px 14px",
+                background: "none",
+                border: "none",
+                color: "var(--text-primary)",
+                fontSize: 12,
+                textAlign: "left",
+                cursor: "pointer",
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
+              onMouseOut={(e) => { e.currentTarget.style.background = "none"; }}
             >
-              ✕
+              {item.icon && <span style={{ fontSize: 10 }}>{item.icon}</span>}
+              {item.label}
             </button>
-          </div>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--text-secondary)" }}>
-            Opacity
-            <input
-              type="range"
-              min={0} max={1} step={0.05}
-              value={overlayOpacity}
-              onChange={(e) => setOverlayOpacity(Number(e.target.value))}
-              style={{ flex: 1 }}
-            />
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer" }}>
-            <input type="checkbox" checked={showMidline} onChange={(e) => setShowMidline(e.target.checked)} />
-            Midline
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer" }}>
-            <input type="checkbox" checked={showSmileArc} onChange={(e) => setShowSmileArc(e.target.checked)} />
-            Smile Arc
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-secondary)", cursor: "pointer" }}>
-            <input type="checkbox" checked={showGingivalLine} onChange={(e) => setShowGingivalLine(e.target.checked)} />
-            Gingival Line
-          </label>
+          ))}
+          
+          {/* Divider */}
+          <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
+          
+          {/* Reset View - styled distinctly and with confirmation */}
+          <button
+            onClick={() => {
+              // Add small delay to prevent accidental click on menu open
+              setTimeout(() => {
+                resetView();
+                setContextMenu(null);
+              }, 50);
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              width: "100%",
+              padding: "6px 14px",
+              background: "none",
+              border: "none",
+              color: "var(--danger, #ef476f)",
+              fontSize: 12,
+              textAlign: "left",
+              cursor: "pointer",
+              fontWeight: 500,
+            }}
+            onMouseOver={(e) => { e.currentTarget.style.background = "rgba(239, 71, 111, 0.15)"; }}
+            onMouseOut={(e) => { e.currentTarget.style.background = "none"; }}
+          >
+            <span style={{ fontSize: 10 }}>↺</span>
+            Reset View
+          </button>
         </div>
       )}
 
@@ -903,19 +938,6 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
             <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
           </svg>
         </button>
-        {/* Photo-aligned view — only available when reference points exist */}
-        {scanReferencePoints && archScanMesh && (
-          <button
-            className="btn-icon"
-            title="Align to Photo"
-            onClick={goToPhotoView}
-            style={{ color: showPhotoIn3D ? "var(--accent)" : undefined }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M21 3H3C1.9 3 1 3.9 1 5v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H3V5h18v14zM11 7l-5 6.5 3.5-1.5L12 15l2.5-3 3.5 4.5z"/>
-            </svg>
-          </button>
-        )}
         <button
           className="btn-icon"
           title={showMeasurements ? "Hide Measurements" : "Show Measurements"}
@@ -928,9 +950,72 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
         </button>
       </div>
 
+      {isAlignmentMode && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 12,
+            left: 12,
+            padding: "8px 10px",
+            background: "rgba(15, 20, 25, 0.82)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: 8,
+            color: "var(--text-muted)",
+            fontSize: 11,
+            zIndex: 10,
+          }}
+        >
+          <div style={{ color: "var(--text-primary)", marginBottom: 4 }}>
+            {activeLandmark ? `Active landmark: ${activeLandmark.label}` : "Select a landmark"}
+          </div>
+          {activeLandmark && (
+            <div style={{ marginBottom: 4 }}>
+              {`${activeLandmark.photoCoord ? "2D point placed" : "2D point missing"} · ${activeLandmark.modelCoord ? "3D point placed" : "3D point missing"}`}
+            </div>
+          )}
+          <div>
+            {activeSurface === "scan" && activeLandmarkId
+              ? scanInteractionMode === "pick"
+                ? "Click the scan to place the 3D point."
+                : "Switch to pick mode when you are ready to place the 3D point."
+              : "Switch to 'Place on Scan' to mark the active 3D landmark."}
+          </div>
+          <div style={{ marginTop: 4 }}>
+            {completedPairCount} matched pair{completedPairCount === 1 ? "" : "s"}
+          </div>
+        </div>
+      )}
+
+      {scanLoadNotice && !isAlignmentMode && (
+        <div
+          style={{
+            position: "absolute",
+            top: 14,
+            left: "50%",
+            transform: "translateX(-50%)",
+            padding: "8px 12px",
+            borderRadius: 999,
+            border: "1px solid rgba(255,255,255,0.1)",
+            background: "rgba(15, 20, 25, 0.88)",
+            backdropFilter: "blur(8px)",
+            color: "var(--text-primary)",
+            fontSize: 11,
+            zIndex: 10,
+            pointerEvents: "none",
+            boxShadow: "0 8px 20px rgba(0,0,0,0.28)",
+          }}
+        >
+          {scanLoadNotice}
+        </div>
+      )}
+
       {/* Camera presets - right side vertical strip */}
       <div className="viewer-presets">
-        {CAMERA_PRESETS.map((preset) => (
+        {[
+          CAMERA_PRESETS[0], // Front
+          CAMERA_PRESETS[1], // Back
+          CAMERA_PRESETS[2], // Top
+        ].map((preset) => (
           <button
             key={preset.label}
             className="viewer-preset-btn"
@@ -942,52 +1027,7 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
         ))}
       </div>
 
-      {/* Inline measurement labels for selected tooth */}
-      {showMeasurements && selectedToothId && activeVariant && (() => {
-        const tooth = activeVariant.teeth.find(t => t.toothId === selectedToothId);
-        if (!tooth) return null;
-        return (
-          <div
-            style={{
-              position: "absolute",
-              top: 12,
-              right: 80,
-              background: "rgba(15, 20, 25, 0.85)",
-              backdropFilter: "blur(8px)",
-              borderRadius: 8,
-              padding: "8px 12px",
-              zIndex: 10,
-              border: "1px solid rgba(255,255,255,0.08)",
-              fontSize: 11,
-              color: "var(--text-secondary)",
-              display: "flex",
-              flexDirection: "column" as const,
-              gap: 4,
-              minWidth: 120,
-            }}
-          >
-            <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>
-              Tooth #{tooth.toothId}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span>Width</span>
-              <span style={{ color: "var(--accent)", fontWeight: 500 }}>{tooth.width.toFixed(1)} mm</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span>Height</span>
-              <span style={{ color: "var(--accent)", fontWeight: 500 }}>{tooth.height.toFixed(1)} mm</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span>Depth</span>
-              <span style={{ color: "var(--accent)", fontWeight: 500 }}>{tooth.depth.toFixed(1)} mm</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-              <span>W:H Ratio</span>
-              <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{(tooth.width / tooth.height).toFixed(2)}</span>
-            </div>
-          </div>
-        );
-      })()}
+
 
       {/* Info bar */}
       <div className="viewer-info">
@@ -1011,8 +1051,8 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
       {/* Controls hint */}
       <div className="viewer-controls-hint">
         <span>LMB: Trackball</span>
-        <span>RMB: Pan</span>
-        <span>Scroll: Zoom</span>
+        <span>RMB: Menu</span>
+        <span>Scroll: Scan zoom</span>
       </div>
 
       </>

@@ -119,6 +119,7 @@ export function PhotoOverlay({
     startPanX?: number;
     startPanY?: number;
   } | null>(null);
+  const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(null);
 
   // Measure container size
   useEffect(() => {
@@ -655,21 +656,36 @@ export function PhotoOverlay({
                 ? "crosshair"
                 : (dragState && dragState.type !== "pan" ? "grabbing" : "crosshair")
             }}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-            onClick={(e) => {
-              if (isAlignmentMode && activeSurface === "photo" && activeLandmarkId) {
-                e.stopPropagation();
-                const pt = getSvgPoint(e);
-                setPhotoLandmark(activeLandmarkId, pt.x / viewWidth, pt.y / viewHeight);
-                // Auto-progression: after placing photo point, switch to scan surface
-                setActiveSurface("scan");
-                setScanInteractionMode("pick");
-                return;
-              }
-            }}
-          >
+              onMouseMove={(e) => {
+                handleMouseMove(e);
+                if (isAlignmentMode && activeSurface === "photo" && activeLandmarkId) {
+                  const svg = svgRef.current;
+                  if (!svg) return;
+                  const pt = svg.createSVGPoint();
+                  pt.x = e.clientX;
+                  pt.y = e.clientY;
+                  const svgPoint = pt.matrixTransform(svg.getScreenCTM()?.inverse());
+                  setHoverPoint({ x: svgPoint.x / viewWidth, y: svgPoint.y / viewHeight });
+                } else {
+                  setHoverPoint(null);
+                }
+              }}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={() => {
+                setHoverPoint(null);
+              }}
+              onClick={(e) => {
+                if (isAlignmentMode && activeSurface === "photo" && activeLandmarkId) {
+                  e.stopPropagation();
+                  const pt = getSvgPoint(e);
+                  setPhotoLandmark(activeLandmarkId, pt.x / viewWidth, pt.y / viewHeight);
+                  // Auto-progression: after placing photo point, switch to scan surface
+                  setActiveSurface("scan");
+                  setScanInteractionMode("pick");
+                  return;
+                }
+              }}
+            >
             {isAlignmentMode && activeSurface === "photo" && activeLandmark && activeLandmarkTarget && (
               <g data-testid="photo-overlay-placement-target">
                 <circle
@@ -738,11 +754,26 @@ export function PhotoOverlay({
                   >
                     {landmark.label}
                   </text>
-                </g>
-              );
-            })}
+              </g>
+            );
+          })}
 
-            {/* Alignment markers (arch curve + crosshairs) */}
+          {/* Ghost marker for hover preview */}
+          {hoverPoint && activeLandmark && (
+            <circle
+              cx={hoverPoint.x * viewWidth}
+              cy={hoverPoint.y * viewHeight}
+              r={6}
+              fill="none"
+              stroke={activeLandmark.color}
+              strokeWidth={2}
+              strokeDasharray="3 2"
+              opacity={0.7}
+              style={{ pointerEvents: "none" }}
+            />
+          )}
+
+          {/* Alignment markers (arch curve + crosshairs) */}
             {!isAlignmentMode && (
               <AlignmentMarkers
                 markers={alignmentMarkers}
