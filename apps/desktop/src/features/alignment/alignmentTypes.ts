@@ -1,8 +1,21 @@
+/**
+ * COORDINATE SYSTEM CONVENTIONS:
+ * 
+ * Photo space: (0,0) = top-left, +X = right, +Y = down, normalized 0-1
+ * Scan space:  (0,0,0) = midline at occlusal plane, +X = patient-left, +Y = gingival (up), +Z = posterior
+ * SVG space:   (0,0) = top-left, +X = right, +Y = down, in pixels
+ * 
+ * Y-axis note: Scan Y is inverted relative to photo/SVG because dental scans use +Y = gingival (up in mouth),
+ * while photos use +Y = down (screen coordinates). The solver handles this inversion internally.
+ */
+
 export interface LandmarkCorrespondence {
   id: string;
   anatomicId: AnatomicLandmarkId;
-  photoPoint: { x: number; y: number }; // Normalized 0-1
-  modelPoint: { x: number; y: number; z: number }; // mm in STL space
+  /** Photo coordinates: normalized 0-1, origin at top-left, +Y = down */
+  photoPoint: { x: number; y: number };
+  /** Model coordinates: mm in STL space, origin at scan center, +Y = gingival (up in mouth) */
+  modelPoint: { x: number; y: number; z: number };
   weight: number;
 }
 
