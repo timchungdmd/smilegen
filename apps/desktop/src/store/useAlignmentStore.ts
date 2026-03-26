@@ -105,6 +105,8 @@ interface AlignmentState {
   solvedView: PhotoAlignedView | null;
   lastSolveError: number | null;
   alignmentResult: AlignmentResult | null;
+  viewWidth: number;
+  viewHeight: number;
 }
 
 interface AlignmentActions {
@@ -127,6 +129,7 @@ interface AlignmentActions {
   isAlignmentComplete: () => boolean;
   canSolve: () => boolean;
   resetAlignment: () => void;
+  setViewDimensions: (width: number, height: number) => void;
 }
 
 export type AlignmentStoreType = AlignmentState & AlignmentActions;
@@ -159,9 +162,15 @@ const INITIAL_ALIGNMENT_STATE: AlignmentState = {
   solvedView: null,
   lastSolveError: null,
   alignmentResult: null,
+  viewWidth: 600,
+  viewHeight: 450,
 };
 
-function trySolveAlignment(landmarks: AlignmentLandmark[]): AlignmentResult | null {
+function trySolveAlignment(
+  landmarks: AlignmentLandmark[],
+  viewWidth: number,
+  viewHeight: number
+): AlignmentResult | null {
   const pairs = landmarks.filter(
     (l) => l.photoCoord !== null && l.modelCoord !== null
   );
@@ -177,8 +186,8 @@ function trySolveAlignment(landmarks: AlignmentLandmark[]): AlignmentResult | nu
 
   const params: ProjectionParams = {
     fov: 45,
-    imageWidth: 1000,
-    imageHeight: 750,
+    imageWidth: viewWidth,
+    imageHeight: viewHeight,
     principalPoint: { x: 0.5, y: 0.5 },
   };
 
@@ -229,26 +238,26 @@ export const useAlignmentStore = create<AlignmentStoreType>()(
       setScanInteractionMode: (mode) => set({ scanInteractionMode: mode }),
 
 setPhotoLandmark: (id, x, y) => set((state) => {
-  const updated = updateLandmark(state.landmarks, id, { photoCoord: { x, y } });
-  return {
-    landmarks: updated,
-    alignmentResult: trySolveAlignment(updated),
-    overlayTransform: null,
-    solvedView: null,
-    lastSolveError: null,
-  };
-}),
+      const updated = updateLandmark(state.landmarks, id, { photoCoord: { x, y } });
+      return {
+        landmarks: updated,
+        alignmentResult: trySolveAlignment(updated, state.viewWidth, state.viewHeight),
+        overlayTransform: null,
+        solvedView: null,
+        lastSolveError: null,
+      };
+    }),
 
-setModelLandmark: (id, x, y, z) => set((state) => {
-  const updated = updateLandmark(state.landmarks, id, { modelCoord: { x, y, z } });
-  return {
-    landmarks: updated,
-    alignmentResult: trySolveAlignment(updated),
-    overlayTransform: null,
-    solvedView: null,
-    lastSolveError: null,
-  };
-}),
+    setModelLandmark: (id, x, y, z) => set((state) => {
+      const updated = updateLandmark(state.landmarks, id, { modelCoord: { x, y, z } });
+      return {
+        landmarks: updated,
+        alignmentResult: trySolveAlignment(updated, state.viewWidth, state.viewHeight),
+        overlayTransform: null,
+        solvedView: null,
+        lastSolveError: null,
+      };
+    }),
 
       clearLandmark: (id) =>
         set((state) => ({
@@ -321,14 +330,30 @@ clearAllLandmarks: () =>
 
       canSolve: () => get().getCompletedPairCount() >= 2,
 
-      resetAlignment: () =>
-        set({
-          ...INITIAL_ALIGNMENT_STATE,
-          landmarks: cloneDefaultLandmarks(),
-          overlayTransform: null,
-          adjustmentDelta: DEFAULT_ADJUSTMENT_DELTA,
-        }),
+resetAlignment: () =>
+    set({
+      ...INITIAL_ALIGNMENT_STATE,
+      landmarks: cloneDefaultLandmarks(),
+      overlayTransform: null,
+      adjustmentDelta: DEFAULT_ADJUSTMENT_DELTA,
     }),
+
+  setViewDimensions: (width, height) =>
+    set((state) => {
+      if (state.viewWidth === width && state.viewHeight === height) {
+        return {};
+      }
+      const hasEnoughPairs =
+        state.landmarks.filter((l) => l.photoCoord && l.modelCoord).length >= 3;
+      return {
+        viewWidth: width,
+        viewHeight: height,
+        alignmentResult: hasEnoughPairs
+          ? trySolveAlignment(state.landmarks, width, height)
+          : null,
+      };
+    }),
+}),
     {
       name: ALIGNMENT_STORAGE_KEY,
       partialize: (state: AlignmentStoreType) => ({

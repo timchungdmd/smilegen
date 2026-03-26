@@ -104,6 +104,7 @@ export function PhotoOverlay({
   const nudgeScale = useAlignmentStore((s) => s.nudgeScale);
   const setOverlayTransform = useAlignmentStore((s) => s.setOverlayTransform);
   const alignmentResult = useAlignmentStore((s) => s.alignmentResult);
+  const setViewDimensions = useAlignmentStore((s) => s.setViewDimensions);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -155,6 +156,11 @@ const [draggingLandmarkId, setDraggingLandmarkId] = useState<AlignmentLandmarkId
   // SVG viewBox matches photo space for consistent coordinate system
   const viewWidth = 600;
   const viewHeight = (imgNatural.h / imgNatural.w) * 600;
+
+  // Sync view dimensions to alignment store
+  useEffect(() => {
+    setViewDimensions(viewWidth, viewHeight);
+  }, [viewWidth, viewHeight, setViewDimensions]);
 
   // Build perspective calibration
   const calibration: AlignmentCalibration = useMemo(() => {
