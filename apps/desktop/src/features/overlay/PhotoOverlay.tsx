@@ -4,6 +4,7 @@ import type { UploadedPhoto } from "../../store/useImportStore";
 import { useImportStore } from "../../store/useImportStore";
 import { useViewportStore } from "../../store/useViewportStore";
 import { useAlignmentStore } from "../../store/useAlignmentStore";
+import type { AlignmentLandmarkId } from "../../store/useAlignmentStore";
 import { useDesignStore } from "../../store/useDesignStore";
 import type { GeneratedVariantDesign } from "../engine/designEngine";
 import {
@@ -110,16 +111,17 @@ export function PhotoOverlay({
   const [containerSize, setContainerSize] = useState({ w: 600, h: 400 });
   const [imgNatural, setImgNatural] = useState({ w: 600, h: 400 });
 
-  const [dragState, setDragState] = useState<{
-    type: DragType;
-    id?: string;
-    startX: number;
-    startY: number;
-    startValue: number;
-    startPanX?: number;
-    startPanY?: number;
-  } | null>(null);
-  const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(null);
+const [dragState, setDragState] = useState<{
+  type: DragType;
+  id?: string;
+  startX: number;
+  startY: number;
+  startValue: number;
+  startPanX?: number;
+  startPanY?: number;
+} | null>(null);
+const [hoverPoint, setHoverPoint] = useState<{ x: number; y: number } | null>(null);
+const [draggingLandmarkId, setDraggingLandmarkId] = useState<AlignmentLandmarkId | null>(null);
 
   // Measure container size
   useEffect(() => {
@@ -332,6 +334,26 @@ export function PhotoOverlay({
   );
 
   const handleMouseUp = useCallback(() => setDragState(null), []);
+const handleLandmarkDragStart = useCallback((id: AlignmentLandmarkId) => (e: React.MouseEvent) => {
+  e.stopPropagation();
+  setDraggingLandmarkId(id);
+}, []);
+const handleLandmarkDrag = useCallback(
+  (e: React.MouseEvent) => {
+    if (!draggingLandmarkId) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const svgPoint = pt.matrixTransform(svg.getScreenCTM()?.inverse());
+    setPhotoLandmark(draggingLandmarkId, svgPoint.x / viewWidth, svgPoint.y / viewHeight);
+  },
+  [draggingLandmarkId, viewWidth, viewHeight, setPhotoLandmark]
+);
+const handleLandmarkDragEnd = useCallback(() => {
+  setDraggingLandmarkId(null);
+}, []);
 
   const photoZoomRef = useRef(photoZoom);
   photoZoomRef.current = photoZoom;
@@ -656,24 +678,29 @@ export function PhotoOverlay({
                 ? "crosshair"
                 : (dragState && dragState.type !== "pan" ? "grabbing" : "crosshair")
             }}
-              onMouseMove={(e) => {
-                handleMouseMove(e);
-                if (isAlignmentMode && activeSurface === "photo" && activeLandmarkId) {
-                  const svg = svgRef.current;
-                  if (!svg) return;
-                  const pt = svg.createSVGPoint();
-                  pt.x = e.clientX;
-                  pt.y = e.clientY;
-                  const svgPoint = pt.matrixTransform(svg.getScreenCTM()?.inverse());
-                  setHoverPoint({ x: svgPoint.x / viewWidth, y: svgPoint.y / viewHeight });
-                } else {
-                  setHoverPoint(null);
-                }
-              }}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={() => {
-                setHoverPoint(null);
-              }}
+onMouseMove={(e) => {
+  handleLandmarkDrag(e);
+  handleMouseMove(e);
+  if (isAlignmentMode && activeSurface === "photo" && activeLandmarkId && !draggingLandmarkId) {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const svgPoint = pt.matrixTransform(svg.getScreenCTM()?.inverse());
+    setHoverPoint({ x: svgPoint.x / viewWidth, y: svgPoint.y / viewHeight });
+  } else if (!draggingLandmarkId) {
+    setHoverPoint(null);
+  }
+}}
+onMouseUp={() => {
+  handleMouseUp();
+  handleLandmarkDragEnd();
+}}
+onMouseLeave={() => {
+  setHoverPoint(null);
+  handleLandmarkDragEnd();
+}}
               onClick={(e) => {
                 if (isAlignmentMode && activeSurface === "photo" && activeLandmarkId) {
                   e.stopPropagation();
@@ -719,44 +746,47 @@ export function PhotoOverlay({
               </g>
             )}
 
-            {isAlignmentMode && landmarks.map((landmark) => {
-              if (!landmark.photoCoord) return null;
-              const isActive = landmark.id === activeLandmarkId;
-              return (
-                <g key={landmark.id}>
-                  {isActive && (
-                    <circle
-                      cx={landmark.photoCoord.x * viewWidth}
-                      cy={landmark.photoCoord.y * viewHeight}
-                      r={4.5}
-                      fill="none"
-                      stroke={landmark.color}
-                      strokeWidth={1.25}
-                      strokeDasharray="2 1.5"
-                      opacity={0.82}
-                    />
-                  )}
-                  <circle
-                    cx={landmark.photoCoord.x * viewWidth}
-                    cy={landmark.photoCoord.y * viewHeight}
-                    r={2.5}
-                    fill={landmark.color}
-                    stroke="#fff"
-                    strokeWidth={1}
-                  />
-                  <text
-                    x={landmark.photoCoord.x * viewWidth}
-                    y={landmark.photoCoord.y * viewHeight - 6}
-                    textAnchor="middle"
-                    fill={landmark.color}
-                    fontSize={7}
-                    fontWeight={700}
-                  >
-                    {landmark.label}
-                  </text>
-              </g>
-            );
-          })}
+{isAlignmentMode && landmarks.map((landmark) => {
+  if (!landmark.photoCoord) return null;
+  const isActive = landmark.id === activeLandmarkId;
+  return (
+    <g key={landmark.id}>
+      {isActive && (
+        <circle
+          cx={landmark.photoCoord.x * viewWidth}
+          cy={landmark.photoCoord.y * viewHeight}
+          r={4.5}
+          fill="none"
+          stroke={landmark.color}
+          strokeWidth={1.25}
+          strokeDasharray="2 1.5"
+          opacity={0.82}
+        />
+      )}
+      <circle
+        cx={landmark.photoCoord.x * viewWidth}
+        cy={landmark.photoCoord.y * viewHeight}
+        r={6}
+        fill={landmark.color}
+        stroke="#fff"
+        strokeWidth={1}
+        style={{ cursor: "grab" }}
+        onMouseDown={handleLandmarkDragStart(landmark.id)}
+      />
+      <text
+        x={landmark.photoCoord.x * viewWidth}
+        y={landmark.photoCoord.y * viewHeight - 6}
+        textAnchor="middle"
+        fill={landmark.color}
+        fontSize={7}
+        fontWeight={700}
+        style={{ pointerEvents: "none" }}
+      >
+        {landmark.label}
+      </text>
+    </g>
+  );
+})}
 
           {/* Ghost marker for hover preview */}
           {hoverPoint && activeLandmark && (

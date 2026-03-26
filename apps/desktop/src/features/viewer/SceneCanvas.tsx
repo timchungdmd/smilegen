@@ -12,7 +12,7 @@ import { DentalLighting } from "./DentalLighting";
 import { InteractiveTooth } from "./InteractiveTooth";
 import { InteractiveArchCurve } from "./InteractiveArchCurve";
 import { useViewportStore } from "../../store/useViewportStore";
-import { useAlignmentStore, useAlignmentStore as useAlignmentStoreRaw } from "../../store/useAlignmentStore";
+import { useAlignmentStore, useAlignmentStore as useAlignmentStoreRaw, type AlignmentLandmarkId } from "../../store/useAlignmentStore";
 import { resolveLandmarkAlignmentView } from "../alignment/photoAlignment";
 import { getScanLandmarkVisualState } from "./landmarkVisuals";
 import { getScanRenderStyle } from "./scanRenderStyle";
@@ -250,6 +250,7 @@ function StlMeshView({
   onPickPoint,
   landmarks = [],
   activeLandmarkId = null,
+  setModelLandmark,
 }: {
   mesh: ParsedStlMesh;
   color?: string;
@@ -262,8 +263,10 @@ function StlMeshView({
   onPickPoint?: (point: { x: number; y: number; z: number }) => void;
   landmarks?: ReturnType<typeof useAlignmentStore.getState>["landmarks"];
   activeLandmarkId?: ReturnType<typeof useAlignmentStore.getState>["activeLandmarkId"];
+  setModelLandmark?: (id: AlignmentLandmarkId, x: number, y: number, z: number) => void;
 }) {
   const [hoverPoint, setHoverPoint] = useState<THREE.Vector3 | null>(null);
+  const [draggingLandmarkId, setDraggingLandmarkId] = useState<AlignmentLandmarkId | null>(null);
   const activeLandmark = landmarks.find((landmark) => landmark.id === activeLandmarkId) ?? null;
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
@@ -312,23 +315,38 @@ function StlMeshView({
       <mesh
         geometry={geometry}
         position={[-center.x, -center.y, -center.z]}
-        onPointerDown={(event) => {
-          if (!pickEnabled || !onPickPoint) return;
-          event.stopPropagation();
-          onPickPoint({
-            x: event.point.x + center.x,
-            y: event.point.y + center.y,
-            z: event.point.z + center.z,
-          });
-        }}
-        onPointerMove={(event) => {
-          if (pickEnabled && activeLandmarkId) {
-            setHoverPoint(event.point.clone());
-          } else {
-            setHoverPoint(null);
-          }
-        }}
-        onPointerLeave={() => setHoverPoint(null)}
+onPointerDown={(event) => {
+  if (!pickEnabled || !onPickPoint) return;
+  event.stopPropagation();
+  onPickPoint({
+    x: event.point.x + center.x,
+    y: event.point.y + center.y,
+    z: event.point.z + center.z,
+  });
+}}
+onPointerMove={(event) => {
+  if (draggingLandmarkId && setModelLandmark) {
+    setModelLandmark(
+      draggingLandmarkId,
+      event.point.x + center.x,
+      event.point.y + center.y,
+      event.point.z + center.z
+    );
+  } else if (pickEnabled && activeLandmarkId) {
+    setHoverPoint(event.point.clone());
+  } else {
+    setHoverPoint(null);
+  }
+}}
+onPointerUp={() => {
+  if (draggingLandmarkId) {
+    setDraggingLandmarkId(null);
+  }
+}}
+onPointerLeave={() => {
+  setHoverPoint(null);
+  setDraggingLandmarkId(null);
+}}
       >
         <meshPhysicalMaterial
           color={color}
@@ -344,44 +362,59 @@ function StlMeshView({
           side={THREE.DoubleSide}
         />
       </mesh>
-      {landmarks
-        .filter((landmark) => landmark.modelCoord)
-        .map((landmark) => {
-          const visual = getScanLandmarkVisualState(landmark, activeLandmarkId);
-          return (
-            <group
-              key={landmark.id}
-              position={[
-                landmark.modelCoord!.x - center.x,
-                landmark.modelCoord!.y - center.y,
-                landmark.modelCoord!.z - center.z,
-              ]}
-            >
-              {visual.showHalo && (
-                <mesh>
-                  <sphereGeometry args={[visual.haloRadius, 16, 16]} />
-                  <meshStandardMaterial
-                    color={landmark.color}
-                    transparent
-                    opacity={visual.haloOpacity}
-                    emissive={landmark.color}
-                    emissiveIntensity={0.15}
-                  />
-                </mesh>
-              )}
-              <mesh>
-                <sphereGeometry args={[visual.baseRadius, 12, 12]} />
-                <meshStandardMaterial
-                  color={landmark.color}
-                  transparent={visual.markerOpacity < 1}
-                  opacity={visual.markerOpacity}
-                  emissive={landmark.color}
-                  emissiveIntensity={visual.emissiveIntensity}
-                />
-              </mesh>
-              </group>
-            );
-          })}
+{landmarks
+  .filter((landmark) => landmark.modelCoord)
+  .map((landmark) => {
+    const visual = getScanLandmarkVisualState(landmark, activeLandmarkId);
+    return (
+      <group
+        key={landmark.id}
+        position={[
+          landmark.modelCoord!.x - center.x,
+          landmark.modelCoord!.y - center.y,
+          landmark.modelCoord!.z - center.z,
+        ]}
+      >
+        {visual.showHalo && (
+          <mesh>
+            <sphereGeometry args={[visual.haloRadius, 16, 16]} />
+            <meshStandardMaterial
+              color={landmark.color}
+              transparent
+              opacity={visual.haloOpacity}
+              emissive={landmark.color}
+              emissiveIntensity={0.15}
+            />
+          </mesh>
+        )}
+        <mesh
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            setDraggingLandmarkId(landmark.id);
+          }}
+        >
+          <sphereGeometry args={[visual.baseRadius, 12, 12]} />
+          <meshStandardMaterial
+            color={landmark.color}
+            transparent={visual.markerOpacity < 1}
+            opacity={visual.markerOpacity}
+            emissive={landmark.color}
+            emissiveIntensity={visual.emissiveIntensity}
+          />
+        </mesh>
+        <mesh
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            setDraggingLandmarkId(landmark.id);
+          }}
+          onPointerUp={() => setDraggingLandmarkId(null)}
+        >
+          <sphereGeometry args={[visual.baseRadius * 1.8, 8, 8]} />
+          <meshBasicMaterial transparent opacity={0} />
+        </mesh>
+      </group>
+    );
+  })}
         {hoverPoint && activeLandmark && (
           <mesh position={[hoverPoint.x - center.x, hoverPoint.y - center.y, hoverPoint.z - center.z]}>
             <sphereGeometry args={[0.5, 16, 16]} />
@@ -706,40 +739,40 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
           onComplete={() => setAnimTarget(null)}
         />
 
-        {archScanMesh && !hiddenLayers.has("arch-scan") && (
-          <StlMeshView
-            mesh={archScanMesh}
-            color={scanRenderStyle.color}
-            opacity={scanRenderStyle.opacity}
-            metalness={scanRenderStyle.metalness}
-            roughness={scanRenderStyle.roughness}
-            emissive={scanRenderStyle.emissive}
-            emissiveIntensity={scanRenderStyle.emissiveIntensity}
-            pickEnabled={
-              isAlignmentMode &&
-              activeSurface === "scan" &&
-              scanInteractionMode === "pick" &&
-              Boolean(activeLandmarkId)
-            }
-            landmarks={landmarks}
-            activeLandmarkId={activeLandmarkId}
-            onPickPoint={(point) => {
-              if (!activeLandmarkId) return;
-              setModelLandmark(activeLandmarkId, point.x, point.y, point.z);
-              // Auto-advance: find next unpaired landmark
-              const state = useAlignmentStoreRaw.getState();
-              const next = state.landmarks.find(
-                (l) => l.id !== activeLandmarkId && (!l.photoCoord || !l.modelCoord)
-              );
-              if (next) {
-                setActiveLandmark(next.id);
-                setActiveSurface("photo");
-              } else {
-                setScanInteractionMode("navigate");
-              }
-            }}
-          />
-        )}
+{archScanMesh && !hiddenLayers.has("arch-scan") && (
+  <StlMeshView
+    mesh={archScanMesh}
+    color={scanRenderStyle.color}
+    opacity={scanRenderStyle.opacity}
+    metalness={scanRenderStyle.metalness}
+    roughness={scanRenderStyle.roughness}
+    emissive={scanRenderStyle.emissive}
+    emissiveIntensity={scanRenderStyle.emissiveIntensity}
+    pickEnabled={
+      isAlignmentMode &&
+      activeSurface === "scan" &&
+      scanInteractionMode === "pick" &&
+      Boolean(activeLandmarkId)
+    }
+    landmarks={landmarks}
+    activeLandmarkId={activeLandmarkId}
+    setModelLandmark={setModelLandmark}
+    onPickPoint={(point) => {
+      if (!activeLandmarkId) return;
+      setModelLandmark(activeLandmarkId, point.x, point.y, point.z);
+      const state = useAlignmentStoreRaw.getState();
+      const next = state.landmarks.find(
+        (l) => l.id !== activeLandmarkId && (!l.photoCoord || !l.modelCoord)
+      );
+      if (next) {
+        setActiveLandmark(next.id);
+        setActiveSurface("photo");
+      } else {
+        setScanInteractionMode("navigate");
+      }
+    }}
+  />
+)}
 
         {!hiddenLayers.has("design-teeth") && activeVariant?.teeth.map((tooth) => (
           <InteractiveTooth
