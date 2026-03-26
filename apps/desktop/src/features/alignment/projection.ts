@@ -37,8 +37,11 @@ export function project3Dto2D(
   camera.position.set(cameraPosition.x, cameraPosition.y, cameraPosition.z);
   camera.lookAt(new THREE.Vector3(cameraTarget.x, cameraTarget.y, cameraTarget.z));
 
-  const ppOffsetX = (params.principalPoint.x - 0.5) * params.imageWidth;
-  const ppOffsetY = (params.principalPoint.y - 0.5) * params.imageHeight;
+  // Principal point at (0.6, 0.5) means optical center is 10% right of image center.
+  // To center the frustum on that point, we shift the frustum LEFT (negative offset).
+  // setViewOffset's offsetX/offsetY shift the frustum, so we negate the principal point offset.
+  const ppOffsetX = -(params.principalPoint.x - 0.5) * params.imageWidth;
+  const ppOffsetY = -(params.principalPoint.y - 0.5) * params.imageHeight;
   camera.setViewOffset(
     params.imageWidth,
     params.imageHeight,
