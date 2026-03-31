@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 
 interface BeforeAfterSliderProps {
   beforeSrc: string;
@@ -16,6 +16,13 @@ export function BeforeAfterSlider({
   const containerRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState(50);
   const isDragging = useRef(false);
+  const [beforeLoaded, setBeforeLoaded] = useState(false);
+  const [afterLoaded, setAfterLoaded] = useState(false);
+  const [beforeError, setBeforeError] = useState(false);
+  const [afterError, setAfterError] = useState(false);
+
+  const isLoading = !beforeLoaded || !afterLoaded;
+  const hasError = beforeError || afterError;
 
   const updatePosition = useCallback((clientX: number) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -45,6 +52,40 @@ export function BeforeAfterSlider({
     isDragging.current = false;
   }, []);
 
+  // Preload images
+  useEffect(() => {
+    setBeforeLoaded(false);
+    setAfterLoaded(false);
+    setBeforeError(false);
+    setAfterError(false);
+  }, [beforeSrc, afterSrc]);
+
+  const handleBeforeLoad = () => setBeforeLoaded(true);
+  const handleAfterLoad = () => setAfterLoaded(true);
+  const handleBeforeError = () => setBeforeError(true);
+  const handleAfterError = () => setAfterError(true);
+
+  if (hasError) {
+    return (
+      <div
+        data-testid="before-after-slider"
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#1a1f2b",
+          borderRadius: 8,
+          color: "var(--text-muted, #8892a0)",
+          fontSize: 13,
+        }}
+      >
+        Failed to load images
+      </div>
+    );
+  }
+
   return (
     <div
       ref={containerRef}
@@ -57,15 +98,42 @@ export function BeforeAfterSlider({
         width: "100%",
         height: "100%",
         overflow: "hidden",
-        cursor: "col-resize",
+        cursor: isLoading ? "wait" : "col-resize",
         background: "#000",
         borderRadius: 8,
       }}
     >
+      {/* Loading spinner */}
+      {isLoading && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 10,
+          }}
+        >
+          <div
+            style={{
+              width: 32,
+              height: 32,
+              border: "3px solid rgba(255,255,255,0.2)",
+              borderTopColor: "#fff",
+              borderRadius: "50%",
+              animation: "spin 0.8s linear infinite",
+            }}
+          />
+        </div>
+      )}
       {/* After image (full width, behind) */}
       <img
         src={afterSrc}
         alt={afterLabel}
+        onLoad={handleAfterLoad}
+        onError={handleAfterError}
         style={{
           position: "absolute",
           inset: 0,
@@ -73,6 +141,8 @@ export function BeforeAfterSlider({
           height: "100%",
           objectFit: "contain",
           objectPosition: "center",
+          opacity: afterLoaded ? 1 : 0,
+          transition: "opacity 0.2s",
         }}
         draggable={false}
       />
@@ -80,6 +150,8 @@ export function BeforeAfterSlider({
       <img
         src={beforeSrc}
         alt={beforeLabel}
+        onLoad={handleBeforeLoad}
+        onError={handleBeforeError}
         style={{
           position: "absolute",
           inset: 0,
@@ -88,6 +160,8 @@ export function BeforeAfterSlider({
           objectFit: "contain",
           objectPosition: "center",
           clipPath: `inset(0 ${100 - position}% 0 0)`,
+          opacity: beforeLoaded ? 1 : 0,
+          transition: "opacity 0.2s",
         }}
         draggable={false}
       />

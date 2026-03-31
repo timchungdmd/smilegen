@@ -1,10 +1,13 @@
 // apps/desktop/src/services/visionClient.ts
+import { SERVICE_URLS } from "../features/shared/serviceConfig";
 
 const VISION_API_URL =
-  import.meta.env.VITE_VISION_API_URL ?? "http://localhost:8003";
+  import.meta.env.VITE_VISION_API_URL ?? SERVICE_URLS.VISION;
 
 interface RawLandmarkResponse {
   midlineX: number;
+  landmarks: { x: number; y: number; z?: number }[];
+  interpupillaryLine: { leftX: number; leftY: number; rightX: number; rightY: number };
   lipContour: {
     outer: { x: number; y: number; z?: number }[];
     inner: { x: number; y: number; z?: number }[];
@@ -13,17 +16,13 @@ interface RawLandmarkResponse {
 }
 
 export interface VisionLandmarkResult {
-  /** Normalized facial midline X (0–1). Multiply × 100 for viewport store. */
   midlineX: number;
-  /** Left mouth corner, normalized (0–1). */
+  landmarks: { x: number; y: number }[];
+  interpupillaryLine: { x1: number; y1: number; x2: number; y2: number };
   commissureLeft: { x: number; y: number };
-  /** Right mouth corner, normalized (0–1). */
   commissureRight: { x: number; y: number };
-  /** Normalized Y of upper lip center / incisal line (0–1). */
   smileArcY: number;
-  /** Estimated normalized Y of gingival line, above smileArcY. */
   gingivalLineY: number;
-  /** Full lip contour — all points normalized (0–1). */
   lipContour: {
     outer: { x: number; y: number }[];
     inner: { x: number; y: number }[];
@@ -90,6 +89,10 @@ export async function detectLandmarks(
 
   return {
     midlineX: data.midlineX,
+    landmarks: (data.landmarks ?? []).map(({ x, y }) => ({ x, y })),
+    interpupillaryLine: data.interpupillaryLine
+      ? { x1: data.interpupillaryLine.leftX, y1: data.interpupillaryLine.leftY, x2: data.interpupillaryLine.rightX, y2: data.interpupillaryLine.rightY }
+      : { x1: 0, y1: 0.5, x2: 1, y2: 0.5 },
     commissureLeft: { x: outer[0].x, y: outer[0].y },
     commissureRight: { x: outer[10].x, y: outer[10].y },
     smileArcY,

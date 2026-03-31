@@ -46,9 +46,11 @@ import { validateImportSet } from "../features/import/importService";
 import type { ParsedStlMesh } from "../features/import/stlParser";
 import { useImportStore } from "./useImportStore";
 import { useViewportStore } from "./useViewportStore";
+import { useAlignmentStore } from "./useAlignmentStore";
 // NOTE: useCaseStore imported inside action bodies to avoid circular-module-
 // initialization issues (useDesignStore ↔ useCaseStore).
 import { useCaseStore } from "./useCaseStore";
+import { transitionCaseState } from "../features/workflow/workflowState";
 
 // ── Version counter for O(1) undo equality ─────────────────────────────────
 // Incremented by every action that should push a history entry.
@@ -56,6 +58,10 @@ let _vSeed = 0;
 function nextV(): number {
   return ++_vSeed;
 }
+
+// ── Generation lock to prevent race conditions ──────────────────────────────
+// When true, applyGeneration is already running; concurrent calls are skipped.
+let _generating = false;
 
 // ── State ──────────────────────────────────────────────────────────────────
 
@@ -230,10 +236,21 @@ export const useDesignStore = create<DesignStore>()(
       },
 
       updatePlanControls: (controls) => {
+        const prevVariantId = get().activeVariantId;
         set((s) => ({
           plan: applyUpdatePlanControls(s.plan, controls),
           _v: nextV(),
         }));
+        // Re-run generation so slider changes immediately update the 3D design.
+        // Pass navigate:false to avoid redirecting to simulate on every drag.
+        if (get().generatedDesign) {
+          applyGeneration(set, get, { navigate: false });
+          // Restore the user's selected variant if it still exists in the new design
+          const newVariants = get().generatedDesign?.variants ?? [];
+          if (prevVariantId && newVariants.some((v) => v.id === prevVariantId)) {
+            set({ activeVariantId: prevVariantId });
+          }
+        }
       },
 
       toggleTooth: (toothId) => {
@@ -265,15 +282,6 @@ export const useDesignStore = create<DesignStore>()(
       generateDesign: () => {
         const { caseRecord } = useCaseStore.getState();
         if (!caseRecord || caseRecord.workflowState !== "mapped") return;
-
-        const importState = useImportStore.getState();
-        const validation = validateImportSet({
-          photos: importState.uploadedPhotos.map((p) => p.name),
-          archScan: importState.archScanName,
-          toothLibrary: importState.uploadedToothModels.map((m) => m.name),
-        });
-        if (!validation.ok) return;
-
         applyGeneration(set, get);
       },
 
@@ -374,21 +382,28 @@ export const useDesignStore = create<DesignStore>()(
         });
       },
 
-      markReadyForDoctor: () => {
-        const { caseRecord } = useCaseStore.getState();
-        const state = get();
-        const canMark = canMarkReadyForDoctor({
-          hasImports: Boolean(caseRecord),
-          mappingConfirmed: caseRecord?.workflowState === "mapped",
-          savedVariantCount: state.variants.length,
-        });
-        if (!caseRecord || !canMark) return;
+  markReadyForDoctor: () => {
+    const { caseRecord } = useCaseStore.getState();
+    const state = get();
+    const canMark = canMarkReadyForDoctor({
+      hasImports: Boolean(caseRecord),
+      mappingConfirmed: caseRecord?.workflowState === "mapped",
+      savedVariantCount: state.variants.length,
+    });
+    if (!caseRecord || !canMark) return;
 
-        useCaseStore.setState({
-          caseRecord: { ...caseRecord, workflowState: "prepared" },
-        });
-        set({ readyForDoctor: true });
+    const alignmentComplete = useAlignmentStore.getState().isAlignmentComplete();
+    useCaseStore.setState({
+      caseRecord: {
+        ...caseRecord,
+        workflowState: transitionCaseState(caseRecord.workflowState, {
+          hasVariants: true,
+          alignmentComplete,
+        }),
       },
+    });
+    set({ readyForDoctor: true });
+  },
 
       // ── Misc setters ───────────────────────────────────────────────
 
@@ -423,11 +438,29 @@ export const useDesignStore = create<DesignStore>()(
         set({ archPreset: preset, archDepthOverride: p.depth, archHalfWidthOverride: p.halfWidth });
       },
 
-      setArchDepthOverride: (depth) =>
-        set({ archDepthOverride: depth, archPreset: "custom" }),
+      setArchDepthOverride: (depth) => {
+        set({ archDepthOverride: depth, archPreset: "custom" });
+        if (get().generatedDesign) {
+          const prevVariantId = get().activeVariantId;
+          applyGeneration(set, get, { navigate: false });
+          const newVariants = get().generatedDesign?.variants ?? [];
+          if (prevVariantId && newVariants.some((v) => v.id === prevVariantId)) {
+            set({ activeVariantId: prevVariantId });
+          }
+        }
+      },
 
-      setArchHalfWidthOverride: (halfWidth) =>
-        set({ archHalfWidthOverride: halfWidth, archPreset: "custom" }),
+      setArchHalfWidthOverride: (halfWidth) => {
+        set({ archHalfWidthOverride: halfWidth, archPreset: "custom" });
+        if (get().generatedDesign) {
+          const prevVariantId = get().activeVariantId;
+          applyGeneration(set, get, { navigate: false });
+          const newVariants = get().generatedDesign?.variants ?? [];
+          if (prevVariantId && newVariants.some((v) => v.id === prevVariantId)) {
+            set({ activeVariantId: prevVariantId });
+          }
+        }
+      },
 
       applyLibraryCollection: (collection) => {
         useViewportStore.getState().setActiveCollectionId(collection.id);
@@ -481,54 +514,63 @@ export const useDesignStore = create<DesignStore>()(
 
 function applyGeneration(
   set: (partial: Partial<DesignState>) => void,
-  get: () => DesignStore
+  get: () => DesignStore,
+  options: { navigate?: boolean } = {}
 ): void {
-  const state = get();
-  const importState = useImportStore.getState();
-  const viewportState = useViewportStore.getState();
+  if (_generating) return;
+  _generating = true;
+  try {
+    const { navigate = true } = options;
+    const state = get();
+    const importState = useImportStore.getState();
+    const viewportState = useViewportStore.getState();
 
-  const toothLibrary = buildToothLibrary();
-  const libraryCollection = viewportState.activeCollectionId
-    ? BUNDLED_COLLECTIONS.find((c) => c.id === viewportState.activeCollectionId) ?? null
-    : null;
-
-  const archOverrides =
-    state.archDepthOverride != null || state.archHalfWidthOverride != null
-      ? {
-          archDepth: state.archDepthOverride ?? undefined,
-          archHalfWidth: state.archHalfWidthOverride ?? undefined,
-        }
+    const toothLibrary = buildToothLibrary();
+    const libraryCollection = viewportState.activeCollectionId
+      ? BUNDLED_COLLECTIONS.find((c) => c.id === viewportState.activeCollectionId) ?? null
       : null;
 
-  const nextRequest = createVariantGenerationRequest({
-    selectedTeeth: state.plan.selectedTeeth,
-    treatmentMap: state.plan.treatmentMap,
-    additiveBias: state.plan.additiveBias,
-  });
+    const archOverrides =
+      state.archDepthOverride != null || state.archHalfWidthOverride != null
+        ? {
+            archDepth: state.archDepthOverride ?? undefined,
+            archHalfWidth: state.archHalfWidthOverride ?? undefined,
+          }
+        : null;
 
-  const nextDesign = generateSmileDesign(state.plan, {
-    archScan: importState.archScanMesh,
-    toothLibrary,
-    libraryCollection,
-    archOverrides,
-  });
+    const nextRequest = createVariantGenerationRequest({
+      selectedTeeth: state.plan.selectedTeeth,
+      treatmentMap: state.plan.treatmentMap,
+      additiveBias: state.plan.additiveBias,
+    });
 
-  const nextVariants = nextDesign.variants;
-  const defaultVariantId = nextVariants[1]?.id ?? nextVariants[0]?.id ?? null;
-  const defaultVariant = nextVariants.find((v) => v.id === defaultVariantId) ?? null;
+    const nextDesign = generateSmileDesign(state.plan, {
+      archScan: importState.archScanMesh,
+      toothLibrary,
+      libraryCollection,
+      archOverrides,
+    });
 
-  set({
-    generationRequest: nextRequest,
-    generatedDesign: nextDesign,
-    variants: nextVariants,
-    activeVariantId: defaultVariantId,
-    selectedToothId:
-      state.plan.selectedTeeth[4] ?? state.plan.selectedTeeth[0] ?? null,
-    trustSummary: trustFromVariant(defaultVariant),
-    readyForDoctor: false,
-    _v: nextV(),
-  });
+    const nextVariants = nextDesign.variants;
+    const defaultVariantId = nextVariants[1]?.id ?? nextVariants[0]?.id ?? null;
+    const defaultVariant = nextVariants.find((v) => v.id === defaultVariantId) ?? null;
 
-  // Navigate to simulate view after generation
-  viewportState.setActiveView("simulate");
+    set({
+      generationRequest: nextRequest,
+      generatedDesign: nextDesign,
+      variants: nextVariants,
+      activeVariantId: defaultVariantId,
+      selectedToothId:
+        state.plan.selectedTeeth[4] ?? state.plan.selectedTeeth[0] ?? null,
+      trustSummary: trustFromVariant(defaultVariant),
+      readyForDoctor: false,
+      _v: nextV(),
+    });
+
+    if (navigate) {
+      viewportState.setActiveView("design");
+    }
+  } finally {
+    _generating = false;
+  }
 }

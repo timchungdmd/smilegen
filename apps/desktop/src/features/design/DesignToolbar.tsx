@@ -2,26 +2,33 @@ import { useMemo } from "react";
 import { useImportStore } from "../../store/useImportStore";
 import { useDesignStore } from "../../store/useDesignStore";
 import { useCaseStore } from "../../store/useCaseStore";
-import { useViewportStore } from "../../store/useViewportStore";
+import { useViewportStore, useCanvasStore } from "../../store/useViewportStore";
+import { useAlignmentStore } from "../../store/useAlignmentStore";
 import { validateImportSet } from "../import/importService";
 import { BUNDLED_COLLECTIONS } from "../library/bundledLibrary";
 
 /**
- * Top bar of the Design view: 3D/Photo tabs, variant tabs, and case action
- * buttons. Photo-overlay controls live in the floating panel inside SceneCanvas.
- * Reads state directly from stores — no props required.
+ * Top bar of the Design stage.
+ * The 3D/Photo tabs only swap the left workspace panel content; the
+ * viewer-container remains constant and continues rendering the imported scan
+ * plus photo overlay.
  */
 export function DesignToolbar() {
   const designTab = useViewportStore((s) => s.designTab);
   const setDesignTab = useViewportStore((s) => s.setDesignTab);
+  const layoutMode = useViewportStore((s) => s.layoutMode);
+  const setLayoutMode = useViewportStore((s) => s.setLayoutMode);
   const gimbalMode = useViewportStore((s) => s.gimbalMode);
   const setGimbalMode = useViewportStore((s) => s.setGimbalMode);
   const activeCollectionId = useViewportStore((s) => s.activeCollectionId);
   const setActiveCollectionId = useViewportStore((s) => s.setActiveCollectionId);
+  const meshOpacity = useCanvasStore((s) => s.meshOpacity);
+  const setMeshOpacity = useCanvasStore((s) => s.setMeshOpacity);
   const generatedDesign = useDesignStore((s) => s.generatedDesign);
   const activeVariantId = useDesignStore((s) => s.activeVariantId);
   const selectVariant = useDesignStore((s) => s.selectVariant);
   const generateDesign = useDesignStore((s) => s.generateDesign);
+  const setAlignmentMode = useAlignmentStore((s) => s.setAlignmentMode);
 
   const confirmMapping = useCaseStore((s) => s.confirmMapping);
   const createCase = useCaseStore((s) => s.createCase);
@@ -67,27 +74,70 @@ export function DesignToolbar() {
       )}
 
       {/* Toolbar */}
-      <div className="design-toolbar">
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div className="design-toolbar" style={{ flexWrap: 'wrap', rowGap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <div role="tablist" aria-label="Design view" className="tab-bar">
-            <button
-              role="tab"
-              aria-selected={designTab === "3d"}
-              className={`tab ${designTab === "3d" ? "active" : ""}`}
-              onClick={() => setDesignTab("3d")}
-            >
-              3D View
-            </button>
+        <button
+          role="tab"
+          aria-selected={designTab === "3d"}
+          className={`tab ${designTab === "3d" ? "active" : ""}`}
+          onClick={() => {
+            setDesignTab("3d");
+            setAlignmentMode(false);
+          }}
+          title="Show 3D design controls in the workspace panel"
+        >
+          3D View
+        </button>
             <button
               role="tab"
               aria-selected={designTab === "photo"}
               className={`tab ${designTab === "photo" ? "active" : ""}`}
               onClick={() => setDesignTab("photo")}
               disabled={uploadedPhotos.length === 0}
+              title="Show photo overlay and landmark controls in the workspace panel"
             >
               Photo Overlay
             </button>
           </div>
+
+          {/* Layout mode toggle */}
+          <button
+            onClick={() => setLayoutMode(layoutMode === "3d" ? "portrait" : "3d")}
+            title={layoutMode === "3d" ? "Switch to portrait-first" : "Switch to 3D-first"}
+            style={{
+              padding: "4px 8px",
+              background: layoutMode === "portrait" ? "rgba(0,180,216,0.15)" : "var(--bg-tertiary)",
+              border: "1px solid",
+              borderColor: layoutMode === "portrait" ? "var(--accent)" : "var(--border)",
+              borderRadius: 5,
+              color: layoutMode === "portrait" ? "var(--accent)" : "var(--text-muted)",
+              fontSize: 11,
+              cursor: "pointer",
+            }}
+          >
+            {layoutMode === "3d" ? "Portrait Mode" : "3D Mode"}
+          </button>
+
+          {/* Mesh opacity slider — only visible in 3D tab */}
+          {designTab === "3d" && (
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 10, color: "var(--text-muted)" }}>Mesh</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={meshOpacity}
+                onChange={(e) => setMeshOpacity(Number(e.target.value))}
+                title={`Mesh opacity: ${Math.round(meshOpacity * 100)}%`}
+                style={{ width: 60, accentColor: "var(--accent, #00b4d8)", cursor: "pointer" }}
+              />
+              <span style={{ fontSize: 10, color: "var(--text-muted)", minWidth: 28, textAlign: "right" }}>
+                {Math.round(meshOpacity * 100)}%
+              </span>
+            </div>
+          )}
 
           {/* Variant tabs */}
           {generatedDesign && (

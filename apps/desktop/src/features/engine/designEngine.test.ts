@@ -66,7 +66,7 @@ test("updates one tooth inside a variant and rebuilds its geometry", () => {
   });
   const updatedTooth = updatedVariant.teeth.find((tooth) => tooth.toothId === "8");
 
-  expect(originalTooth?.width).toBe(8.7);
+  expect(originalTooth?.width).toBe(8.6);
   expect(updatedTooth?.width).toBe(9.9);
   // previewTriangles must be a new array (rebuilt geometry)
   expect(updatedTooth?.previewTriangles).not.toBe(originalTooth?.previewTriangles);

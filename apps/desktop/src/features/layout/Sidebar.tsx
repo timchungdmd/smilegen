@@ -30,14 +30,14 @@ interface NavItem {
 
 const WORKSPACE_STAGE_ICONS: Record<string, string> = {
   import: "M19 13H5v-2h14v2zm0 6H5v-2h14v2zM5 5h14v2H5V5z",
-  align:
-    "M12 2l2.4 5.1L20 9l-4 3.9.9 5.6L12 16l-4.9 2.5.9-5.6L4 9l5.6-1.9L12 2z",
   design:
     "M7 17.01 17 7l-1.41-1.41L5.59 15.59 7 17.01zM3 21h4l11-11-4-4L3 17v4z",
   review:
     "M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
   present:
     "M4 6h16v12H4zM2 4v16h20V4H2zm8 14h4v2h-4z",
+  handoff:
+    "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
 };
 
 function NavButton({
@@ -120,7 +120,7 @@ export function Sidebar({ activeView }: SidebarProps) {
   const activeStage = getCaseWorkflowStage(activeView);
 
   // ── Top nav: Cases + workflow stages ────────────────────────────────────
-  const workflowStageIds: ViewId[] = ["import", "align", "design", "review", "present"];
+  const workflowStageIds: ViewId[] = ["import", "design", "review", "present", "handoff"];
 
   const topItems: NavItem[] = [
     { id: "cases", label: "Cases", icon: CASES_ICON },
@@ -136,7 +136,7 @@ export function Sidebar({ activeView }: SidebarProps) {
     }),
   ];
 
-  const bottomItems: NavItem[] = [
+const bottomItems: NavItem[] = [
     { id: "settings", label: "Settings", icon: SETTINGS_ICON },
   ];
 

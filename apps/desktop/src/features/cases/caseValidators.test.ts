@@ -60,6 +60,7 @@ describe("parseCaseRecord", () => {
       exportBlocked: false,
       activeDesignVersionId: "v1",
       assets: [],
+      artifacts: [],
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-01T00:00:00Z",
     };
@@ -76,6 +77,7 @@ describe("parseCaseRecord", () => {
         exportBlocked: false,
         activeDesignVersionId: "v1",
         assets: [],
+        artifacts: [],
         createdAt: "2026-01-01",
         updatedAt: "2026-01-01",
       })

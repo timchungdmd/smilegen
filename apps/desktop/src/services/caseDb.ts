@@ -11,13 +11,25 @@ export interface SavedCase {
   id: string;
   title: string;
   workflowState: string;
+  caseRecordJson: string | null;
   planJson: string;
   designJson: string | null;
   overlaySettings: {
     midlineX: number;
     smileArcY: number;
+    smileArcLeftOffset?: number;
+    smileArcRightOffset?: number;
     gingivalLineY: number;
     overlayOpacity: number;
+    leftCommissureX?: number;
+    rightCommissureX?: number;
+    alignmentMarkers?: Array<{
+      id: string;
+      type: "incisal" | "cusp";
+      toothId: string;
+      x: number;
+      y: number;
+    }>;
   };
   createdAt: string;
   updatedAt: string;

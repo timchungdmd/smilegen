@@ -330,6 +330,14 @@ function StlMeshView({
 
   const transform = alignmentResult?.transform;
 
+  const center = useMemo(() => {
+    return new THREE.Vector3(
+      (mesh.bounds.minX + mesh.bounds.maxX) / 2,
+      (mesh.bounds.minY + mesh.bounds.maxY) / 2,
+      (mesh.bounds.minZ + mesh.bounds.maxZ) / 2
+    );
+  }, [mesh.bounds]);
+
   const geometry = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     const vertexCount = mesh.triangles.length * 3;
@@ -358,19 +366,16 @@ function StlMeshView({
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geo.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
     geo.computeBoundingBox();
+    
+    // Shift geometry so its center is exactly at origin. This ensures scale and rotation 
+    // are applied around the mesh centroid instead of world origin, matching landmark math.
+    geo.translate(-center.x, -center.y, -center.z);
+    
     return geo;
-  }, [mesh.triangles]);
+  }, [mesh.triangles, center]);
 
   // Dispose GPU memory when geometry is replaced or component unmounts
   useEffect(() => () => { geometry.dispose(); }, [geometry]);
-
-  const center = useMemo(() => {
-    return new THREE.Vector3(
-      (mesh.bounds.minX + mesh.bounds.maxX) / 2,
-      (mesh.bounds.minY + mesh.bounds.maxY) / 2,
-      (mesh.bounds.minZ + mesh.bounds.maxZ) / 2
-    );
-  }, [mesh.bounds]);
 
   return (
     <>
@@ -379,14 +384,23 @@ function StlMeshView({
         scale={transform?.scale ?? 1}
         rotation={[transform?.rotateX ?? 0, transform?.rotateY ?? 0, transform?.rotateZ ?? 0]}
         position={[
-          (transform?.translateX ?? 0) - center.x * (transform?.scale ?? 1),
-          (transform?.translateY ?? 0) - center.y * (transform?.scale ?? 1),
-          (transform?.translateZ ?? 0) - center.z * (transform?.scale ?? 1)
+          transform?.translateX ?? 0,
+          transform?.translateY ?? 0,
+          transform?.translateZ ?? 0
         ]}
-onPointerDown={(event) => {
+        onPointerDown={(event) => {
           if (!pickEnabled || !onPickPoint) return;
           event.stopPropagation();
+
+          console.log('=== 3D Landmark Pick ===');
+          console.log('World point:', event.point);
+          console.log('Center:', center);
+          console.log('Transform:', transform);
+
           const modelCoord = inverseLandmarkTransform(event.point, center, transform);
+          console.log('Model coord:', modelCoord);
+          console.log('========================');
+
           onPickPoint(modelCoord);
         }}
         onPointerMove={(event) => {
@@ -423,17 +437,19 @@ onPointerLeave={() => {
           side={THREE.DoubleSide}
         />
       </mesh>
-{landmarks
+      {landmarks
         .filter((landmark) => landmark.modelCoord)
         .map((landmark) => {
+          const worldPos = applyLandmarkTransform(landmark.modelCoord!, center, transform);
           const visual = getScanLandmarkVisualState(landmark, activeLandmarkId);
           return (
             <group
               key={landmark.id}
-              position={applyLandmarkTransform(landmark.modelCoord!, center, transform)}
+              position={worldPos}
+              renderOrder={10}
             >
         {visual.showHalo && (
-          <mesh>
+          <mesh renderOrder={10}>
             <sphereGeometry args={[visual.haloRadius, 16, 16]} />
             <meshStandardMaterial
               color={landmark.color}
@@ -441,10 +457,12 @@ onPointerLeave={() => {
               opacity={visual.haloOpacity}
               emissive={landmark.color}
               emissiveIntensity={0.15}
+              depthTest={false}
             />
           </mesh>
         )}
         <mesh
+          renderOrder={10}
           onPointerDown={(e) => {
             e.stopPropagation();
             setDraggingLandmarkId(landmark.id);
@@ -457,23 +475,29 @@ onPointerLeave={() => {
             opacity={visual.markerOpacity}
             emissive={landmark.color}
             emissiveIntensity={visual.emissiveIntensity}
+            depthTest={false}
           />
         </mesh>
+        {/* Invisible hit-target sphere — larger radius for easier dragging */}
         <mesh
+          renderOrder={10}
           onPointerDown={(e) => {
             e.stopPropagation();
             setDraggingLandmarkId(landmark.id);
           }}
           onPointerUp={() => setDraggingLandmarkId(null)}
         >
-          <sphereGeometry args={[visual.baseRadius * 1.8, 8, 8]} />
-          <meshBasicMaterial transparent opacity={0} />
+          <sphereGeometry args={[visual.baseRadius * 2.5, 8, 8]} />
+          <meshBasicMaterial transparent opacity={0} depthTest={false} />
         </mesh>
       </group>
     );
   })}
 {hoverPoint && activeLandmark && (
-            <mesh position={[hoverPoint.x, hoverPoint.y, hoverPoint.z]}>
+            <mesh
+              renderOrder={10}
+              position={[hoverPoint.x, hoverPoint.y, hoverPoint.z]}
+            >
               <sphereGeometry args={[0.5, 16, 16]} />
               <meshStandardMaterial
                 color={activeLandmark.color}
@@ -481,6 +505,7 @@ onPointerLeave={() => {
                 opacity={0.5}
                 emissive={activeLandmark.color}
                 emissiveIntensity={0.3}
+                depthTest={false}
               />
             </mesh>
           )}
@@ -632,7 +657,6 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [scanLoadNotice, setScanLoadNotice] = useState<string | null>(null);
 
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const [animTarget, setAnimTarget] = useState<{
     pos: THREE.Vector3;
@@ -771,18 +795,7 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
       className="viewer-container"
       tabIndex={0}
       style={{ flex: 1, position: "relative" }}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        setContextMenu({ x: e.clientX, y: e.clientY });
-      }}
-      onClick={() => contextMenu && setContextMenu(null)}
-      onKeyDown={(e) => {
-        if (e.key === "Escape" && contextMenu) {
-          setContextMenu(null);
-        }
-      }}
     >
-
       {/* Gate: only create the WebGL canvas when this container is painted.
           The Workspace keep-alive pattern hides inactive views with display:none;
           without this gate every mounted view allocates a WebGL context, quickly
@@ -835,20 +848,22 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
     activeLandmarkId={activeLandmarkId}
     alignmentResult={alignmentResult}
     setModelLandmark={setModelLandmark}
-    onPickPoint={(point) => {
-      if (!activeLandmarkId) return;
-      setModelLandmark(activeLandmarkId, point.x, point.y, point.z);
-      const state = useAlignmentStoreRaw.getState();
-      const next = state.landmarks.find(
-        (l) => l.id !== activeLandmarkId && (!l.photoCoord || !l.modelCoord)
-      );
-      if (next) {
-        setActiveLandmark(next.id);
-        setActiveSurface("photo");
-      } else {
-        setScanInteractionMode("navigate");
-      }
-    }}
+        onPickPoint={(point) => {
+          if (!activeLandmarkId) return;
+          setModelLandmark(activeLandmarkId, point.x, point.y, point.z);
+          const state = useAlignmentStoreRaw.getState();
+          // Find next landmark that has photo but needs scan
+          const next = state.landmarks.find(
+            (l) => l.id !== activeLandmarkId && l.photoCoord && !l.modelCoord
+          );
+          if (next) {
+            setActiveLandmark(next.id);
+            // Stay on scan surface to continue placing scan landmarks
+          } else {
+            // All landmarks complete, switch to navigate mode
+            setScanInteractionMode("navigate");
+          }
+        }}
   />
 )}
 
@@ -884,6 +899,7 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
 
         <TrackballControls
           ref={controlsRef}
+          enabled={!(isAlignmentMode && activeSurface === "scan" && scanInteractionMode === "pick")}
           rotateSpeed={2.5}
           zoomSpeed={1.2}
           panSpeed={0.8}
@@ -906,141 +922,6 @@ export function SceneCanvas({ archScanMesh, activeVariant, selectedToothId, onSe
           />
         </GizmoHelper>
       </Canvas>
-
-      {shouldShowPhotoOverlay && primaryPhoto && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 2,
-            pointerEvents: photoOverlayPointerEventsEnabled ? "auto" : "none",
-          }}
-        >
-          <ErrorBoundary label="Photo Overlay">
-            <PhotoOverlay
-              photo={primaryPhoto}
-              activeVariant={activeVariant ?? null}
-              selectedToothId={selectedToothId ?? null}
-              onSelectTooth={onSelectTooth ?? (() => undefined)}
-              onMoveTooth={moveTooth}
-            />
-          </ErrorBoundary>
-        </div>
-      )}
-
-      {/* Right-click context menu */}
-      {contextMenu && (
-        <div
-          style={{
-            position: "fixed",
-            top: contextMenu.y,
-            left: contextMenu.x,
-            background: "rgba(15, 20, 25, 0.95)",
-            backdropFilter: "blur(12px)",
-            borderRadius: 8,
-            padding: "4px 0",
-            minWidth: 180,
-            zIndex: 100,
-            border: "1px solid rgba(255,255,255,0.1)",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-            // Prevent accidental activation on menu open
-            animation: "fadeIn 0.15s ease-out",
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Section: Camera Views */}
-          <div style={{ padding: "4px 12px", fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 0.5 }}>
-            Camera Views
-          </div>
-          {[
-            { label: "Front", action: () => goToPreset(CAMERA_PRESETS[0]) },
-            { label: "Back", action: () => goToPreset(CAMERA_PRESETS[1]) },
-            { label: "Top", action: () => goToPreset(CAMERA_PRESETS[2]) },
-          ].map((item, i) => (
-            <button
-              key={i}
-              onClick={() => { item.action(); setContextMenu(null); }}
-              style={{
-                display: "block",
-                width: "100%",
-                padding: "6px 14px",
-                background: "none",
-                border: "none",
-                color: "var(--text-primary)",
-                fontSize: 12,
-                textAlign: "left",
-                cursor: "pointer",
-              }}
-              onMouseOver={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-              onMouseOut={(e) => { e.currentTarget.style.background = "none"; }}
-            >
-              {item.label}
-            </button>
-          ))}
-          
-          {/* Divider */}
-          <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
-          
-          {/* Special Actions */}
-          {([] as { label: string; action: () => void; icon?: string }[]).map((item, i) => (
-            <button
-              key={i}
-              onClick={() => { item.action(); setContextMenu(null); }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                width: "100%",
-                padding: "6px 14px",
-                background: "none",
-                border: "none",
-                color: "var(--text-primary)",
-                fontSize: 12,
-                textAlign: "left",
-                cursor: "pointer",
-              }}
-              onMouseOver={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; }}
-              onMouseOut={(e) => { e.currentTarget.style.background = "none"; }}
-            >
-              {item.icon && <span style={{ fontSize: 10 }}>{item.icon}</span>}
-              {item.label}
-            </button>
-          ))}
-          
-          {/* Divider */}
-          <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
-          
-          {/* Reset View - styled distinctly and with confirmation */}
-          <button
-            onClick={() => {
-              // Add small delay to prevent accidental click on menu open
-              setTimeout(() => {
-                resetView();
-                setContextMenu(null);
-              }, 50);
-            }}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              width: "100%",
-              padding: "6px 14px",
-              background: "none",
-              border: "none",
-              color: "var(--danger, #ef476f)",
-              fontSize: 12,
-              textAlign: "left",
-              cursor: "pointer",
-              fontWeight: 500,
-            }}
-            onMouseOver={(e) => { e.currentTarget.style.background = "rgba(239, 71, 111, 0.15)"; }}
-            onMouseOut={(e) => { e.currentTarget.style.background = "none"; }}
-          >
-            <span style={{ fontSize: 10 }}>↺</span>
-            Reset View
-          </button>
-        </div>
-      )}
 
       {/* View preset buttons */}
       <div className="viewer-toolbar">

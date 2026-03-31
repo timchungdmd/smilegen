@@ -115,15 +115,7 @@ export function DesignSidebar() {
         </InspectorCard>
       )}
 
-      {/* Tooth Inspector */}
-      {selectedTooth && (
-        <InspectorCard tone="subtle">
-          <ToothInspector
-            tooth={selectedTooth}
-            onDimensionChange={adjustTooth}
-          />
-        </InspectorCard>
-      )}
+
 
       {/* Shade selector */}
       <InspectorCard>

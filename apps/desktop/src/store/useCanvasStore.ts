@@ -3,6 +3,7 @@ import { create } from "zustand";
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type DesignTab = "3d" | "photo";
+export type LayoutMode = "3d" | "portrait";
 
 // ─── State and actions ───────────────────────────────────────────────────────
 
@@ -15,7 +16,12 @@ interface CanvasState {
   designTab: DesignTab;
   gimbalMode: "translate" | "rotate" | "scale";
   activeGimbalAxis: "x" | "y" | "rotate" | null;
+  layoutMode: LayoutMode;
   hiddenLayers: Set<string>;
+  /** Mesh scale factor from measurement-based scaling (1 = no scaling) */
+  meshScale: number;
+  /** Opacity of the 3D mesh (0-1) */
+  meshOpacity: number;
 }
 
 interface CanvasActions {
@@ -26,7 +32,10 @@ interface CanvasActions {
   setDesignTab: (tab: DesignTab) => void;
   setGimbalMode: (mode: "translate" | "rotate" | "scale") => void;
   setActiveGimbalAxis: (axis: "x" | "y" | "rotate" | null) => void;
+  setLayoutMode: (mode: LayoutMode) => void;
   toggleLayer: (layer: string) => void;
+  setMeshScale: (scale: number) => void;
+  setMeshOpacity: (opacity: number) => void;
   resetCanvas: () => void;
 }
 
@@ -41,7 +50,10 @@ const INITIAL_CANVAS_STATE: CanvasState = {
   designTab: "3d",
   gimbalMode: "translate",
   activeGimbalAxis: null,
+  layoutMode: "3d" as LayoutMode,
   hiddenLayers: new Set<string>(),
+  meshScale: 1,
+  meshOpacity: 0.9,
 };
 
 export const useCanvasStore = create<CanvasStore>()((set) => ({
@@ -54,11 +66,14 @@ export const useCanvasStore = create<CanvasStore>()((set) => ({
   setDesignTab: (tab) => set({ designTab: tab }),
   setGimbalMode: (mode) => set({ gimbalMode: mode }),
   setActiveGimbalAxis: (axis) => set({ activeGimbalAxis: axis }),
+  setLayoutMode: (mode) => set({ layoutMode: mode }),
   toggleLayer: (layer) => set((s) => {
     const next = new Set(s.hiddenLayers);
     if (next.has(layer)) next.delete(layer);
     else next.add(layer);
     return { hiddenLayers: next };
   }),
+  setMeshScale: (scale) => set({ meshScale: scale }),
+  setMeshOpacity: (opacity) => set({ meshOpacity: Math.max(0, Math.min(1, opacity)) }),
   resetCanvas: () => set(INITIAL_CANVAS_STATE),
 }));

@@ -4,6 +4,7 @@ import type { ToothLibraryCollection } from "../library/toothLibraryTypes";
 import type { VariantLabel } from "./engineTypes";
 import { archDepthAtX, archTangentAngle, estimateArchFromScan } from "../alignment/archModel";
 import { computeNormal } from "../geometry/meshUtils";
+import { intersectOBB, type OBB } from "../geometry/collisionDetector";
 
 interface ToothPrototype {
   width: number;
@@ -34,6 +35,7 @@ export interface GeneratedToothDesign {
   trustState: "ready" | "needs_correction" | "blocked";
   previewTriangles: MeshTriangle[];
   sourceMesh?: ParsedStlMesh;
+  isHighFidelity?: boolean;
 }
 
 export interface GeneratedVariantDesign {
@@ -65,12 +67,12 @@ export interface GeometryInputs {
 const FALLBACK_TOOTH_LIBRARY: Record<string, ToothPrototype> = {
   "4": { width: 7.2, height: 9.2, depth: 4.8 },
   "5": { width: 7.0, height: 9.6, depth: 5.0 },
-  "6": { width: 8.5, height: 10.4, depth: 5.6 },
-  "7": { width: 6.6, height: 9.8, depth: 5.2 },
-  "8": { width: 8.7, height: 10.8, depth: 5.8 },
-  "9": { width: 8.7, height: 10.8, depth: 5.8 },
-  "10": { width: 6.6, height: 9.8, depth: 5.2 },
-  "11": { width: 8.5, height: 10.4, depth: 5.6 },
+  "6": { width: 7.6, height: 10.2, depth: 7.6 },
+  "7": { width: 6.6, height: 9.2, depth: 6.0 },
+  "8": { width: 8.6, height: 10.8, depth: 7.0 },
+  "9": { width: 8.6, height: 10.8, depth: 7.0 },
+  "10": { width: 6.6, height: 9.2, depth: 6.0 },
+  "11": { width: 7.6, height: 10.2, depth: 7.6 },
   "12": { width: 7.0, height: 9.6, depth: 5.0 },
   "13": { width: 7.2, height: 9.2, depth: 4.8 }
 };
@@ -188,7 +190,9 @@ function computeProportionalWidths(
 
 export function generateSmileDesign(plan: SmilePlan, geometry: GeometryInputs = {}): GeneratedSmileDesign {
   return {
-    variants: VARIANT_SEQUENCE.map((label) => createVariantDesign(plan, label, geometry))
+    variants: VARIANT_SEQUENCE.map((label) => 
+      validateVariantCollisions(createVariantDesign(plan, label, geometry), geometry.archScan)
+    )
   };
 }
 
@@ -213,10 +217,10 @@ export function updateVariantToothDimensions(
     });
   });
 
-  return {
+  return validateVariantCollisions({
     ...variant,
     teeth
-  };
+  });
 }
 
 export function updateVariantToothPlacement(
@@ -239,10 +243,10 @@ export function updateVariantToothPlacement(
     });
   });
 
-  return {
+  return validateVariantCollisions({
     ...variant,
     teeth
-  };
+  });
 }
 
 function createVariantDesign(
@@ -454,7 +458,30 @@ function rebuildToothDesign(
     archAngle: round(geometry.archAngle ?? tooth.archAngle),
     facialVolume: round(geometry.facialVolume),
     trustState,
-    previewTriangles: meshResult.triangles
+  previewTriangles: meshResult.triangles
+  };
+}
+
+function computeToothOBB(tooth: GeneratedToothDesign): OBB {
+  const angle = tooth.archAngle;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+
+  return {
+    center: {
+      x: tooth.positionX,
+      y: tooth.positionZ,
+      z: tooth.positionY + tooth.height / 2,
+    },
+    axes: {
+      x: { x: cos, y: sin },
+      y: { x: -sin, y: cos },
+    },
+    halfExtents: {
+      x: tooth.width / 2,
+      y: tooth.depth / 2,
+      z: tooth.height / 2,
+    },
   };
 }
 
@@ -477,6 +504,44 @@ function deriveTrustState(
   }
 
   return "ready";
+}
+
+function validateVariantCollisions(
+  variant: GeneratedVariantDesign, 
+  archScan?: ParsedStlMesh | null
+): GeneratedVariantDesign {
+  const obbs = variant.teeth.map(t => computeToothOBB(t));
+  
+  // Arch scan proximity proxy
+  const archProxy = archScan ? estimateArchFromScan(archScan.bounds) : null;
+
+  const updatedTeeth = variant.teeth.map((tooth, i) => {
+    if (tooth.trustState === "blocked") return tooth;
+
+    let trustState = tooth.trustState;
+    
+    // 1. Inter-tooth OBB check
+    for (let j = 0; j < obbs.length; j++) {
+      if (i === j) continue;
+      if (intersectOBB(obbs[i], obbs[j])) {
+        trustState = "needs_correction";
+        break;
+      }
+    }
+
+    // 2. Arch scan penetration check (sampling-based proxy)
+    if (trustState === "ready" && archProxy) {
+      const surfaceZ = archDepthAtX(tooth.positionX, archProxy);
+      // If the tooth's Z (depth) is significantly deeper than the scan surface
+      if (tooth.positionZ < surfaceZ - 1.5) {
+        trustState = "needs_correction";
+      }
+    }
+
+    return { ...tooth, trustState };
+  });
+
+  return { ...variant, teeth: updatedTeeth };
 }
 
 function createToothVertices(
@@ -571,6 +636,63 @@ function buildProceduralGeometry(input: {
   return {
     triangles
   };
+}
+
+import { synthesizeVeneer, synthesizeCrown } from "../../services/meshSynthesisClient";
+export { synthesizeVeneer, synthesizeCrown };
+
+import { parseStlArrayBuffer } from "../import/stlParser";
+
+/**
+ * Triggers an asynchronous high-fidelity synthesis pass for a design variant.
+ * Offloads heavy mesh deformation to the meshSynthesisClient service.
+ */
+export async function synthesizeVariantDesign(
+  variant: GeneratedVariantDesign,
+  archScanStl: Blob
+): Promise<GeneratedVariantDesign> {
+  const synthesisPromises = variant.teeth.map(async (tooth) => {
+    // Skip blocked teeth
+    if (tooth.trustState === "blocked") return tooth;
+
+    try {
+      let highFidelityMesh: Blob;
+      
+      // We'd ideally pass the actual tooth source STL here. 
+      // For this demo, we use a generic placeholder blob.
+      const sourceStl = new Blob(["solid tooth\nendsolid tooth"]);
+
+      if (tooth.treatmentType === "crown") {
+        highFidelityMesh = await synthesizeCrown(
+          sourceStl,
+          archScanStl,
+          { x: tooth.positionX, y: tooth.positionY, z: tooth.positionZ },
+          tooth.width / 2
+        );
+      } else {
+        highFidelityMesh = await synthesizeVeneer(
+          sourceStl,
+          archScanStl
+        );
+      }
+
+      // Parse high-fidelity STL back into triangles for the viewport
+      const arrayBuffer = await highFidelityMesh.arrayBuffer();
+      const parsed = parseStlArrayBuffer(arrayBuffer, `${tooth.toothId}_hi_fi`);
+
+      return { 
+        ...tooth, 
+        isHighFidelity: true,
+        previewTriangles: parsed.triangles 
+      };
+    } catch (e) {
+      console.error(`Synthesis failed for tooth ${tooth.toothId}:`, e);
+      return tooth;
+    }
+  });
+
+  const updatedTeeth = await Promise.all(synthesisPromises);
+  return { ...variant, teeth: updatedTeeth };
 }
 
 export function createTriangleStl(name: string, triangles: MeshTriangle[]) {

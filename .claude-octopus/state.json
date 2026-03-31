@@ -1,0 +1,25 @@
+{
+  "version": "1.0.0",
+  "project_id": "d41d8cd98f00b204e9800998ecf8427e
+e7696dd9967abcaabb6fb1872177d34f",
+  "current_workflow": null,
+  "current_phase": null,
+  "session_start": "2026-03-10T14:24:06Z",
+  "decisions": [],
+  "blockers": [],
+  "context": {
+    "discover": null,
+    "define": null,
+    "develop": null,
+    "deliver": null
+  },
+  "metrics": {
+    "phases_completed": 0,
+    "total_execution_time_minutes": 0,
+    "provider_usage": {
+      "codex": 0,
+      "gemini": 0,
+      "claude": 0
+    }
+  }
+}

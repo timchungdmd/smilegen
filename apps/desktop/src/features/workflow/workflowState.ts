@@ -1,9 +1,36 @@
 import type { WorkflowState } from "../cases/types";
 
+/**
+ * SmileGen Case Workflow State Machine
+ *
+ * State transitions follow the dental smile design process:
+ *
+ * ```
+ * draft ──► imported ──► mapped ──► prepared ──► needs_doctor_review ──► doctor_approved ──► exported
+ *   │           │           │           │               │                    │
+ *   └───────────┴───────────┴───────────┴───────────────┴────────────────────┘
+ *                     (can return to draft via reset)
+ * ```
+ *
+ * ## State Descriptions
+ * - **draft**: Initial state, no data imported yet
+ * - **imported**: Photos/models imported, awaiting orientation confirmation
+ * - **mapped**: Facial landmarks mapped, awaiting alignment and variant generation
+ * - **prepared**: Smile design variants ready, awaiting doctor review
+ * - **needs_doctor_review**: Flagged for doctor attention
+ * - **doctor_approved**: Doctor has approved the design
+ * - **exported**: Final design exported to output format
+ *
+ * ## Transition Guards
+ * Each transition requires specific WorkflowInputs conditions to be met.
+ * See transitionCaseState() implementation for guard details.
+ */
+
 export interface WorkflowInputs {
   hasRequiredImports?: boolean;
   orientationConfirmed?: boolean;
   mappingConfirmed?: boolean;
+  alignmentComplete?: boolean;
   hasVariants?: boolean;
   doctorReviewResolved?: boolean;
   doctorApproved?: boolean;
@@ -26,7 +53,7 @@ export function transitionCaseState(
     return "mapped";
   }
 
-  if (currentState === "mapped" && inputs.hasVariants) {
+  if (currentState === "mapped" && inputs.hasVariants && inputs.alignmentComplete) {
     return "prepared";
   }
 

@@ -4,14 +4,13 @@ import { createEmptyCase } from "../features/cases/caseStore";
 import { saveCase, loadCase as loadCaseFromDb, type SavedCase } from "../services/caseDb";
 import { applyMappingResult, type ToothMappingState } from "../features/review/toothMappingStore";
 import { createDefaultSmilePlan } from "../features/smile-plan/smilePlanStore";
-import { parseSmilePlan, parseGeneratedSmileDesign } from "../features/cases/caseValidators";
+import { parseCaseRecord, parseSmilePlan, parseGeneratedSmileDesign } from "../features/cases/caseValidators";
 import type { SmilePlan } from "../features/smile-plan/smilePlanTypes";
 import type { GeneratedSmileDesign } from "../features/engine/designEngine";
 import { transitionCaseState } from "../features/workflow/workflowState";
 import { useImportStore } from "./useImportStore";
 import { useViewportStore } from "./useViewportStore";
-// NOTE: useDesignStore is imported lazily inside action bodies to avoid
-// circular-module-initialization issues (useCaseStore ↔ useDesignStore).
+import { registerResetAllFn } from "./resetAll";
 import { useDesignStore } from "./useDesignStore";
 
 interface CaseState {
@@ -86,16 +85,34 @@ export const useCaseStore = create<CaseStore>((set, get) => ({
     if (!caseRecord) return;
 
     const { plan, generatedDesign } = useDesignStore.getState();
-    const { midlineX, smileArcY, gingivalLineY, overlayOpacity } =
+    const {
+      midlineX,
+      smileArcY,
+      smileArcLeftOffset,
+      smileArcRightOffset,
+      gingivalLineY,
+      overlayOpacity,
+    } =
       useViewportStore.getState();
 
     const savedCase: SavedCase = {
       id: caseRecord.id,
       title: caseRecord.title,
       workflowState: caseRecord.workflowState,
+      caseRecordJson: JSON.stringify(caseRecord),
       planJson: JSON.stringify(plan),
       designJson: generatedDesign ? JSON.stringify(generatedDesign) : null,
-      overlaySettings: { midlineX, smileArcY, gingivalLineY, overlayOpacity },
+    overlaySettings: {
+      midlineX,
+      smileArcY,
+      smileArcLeftOffset,
+      smileArcRightOffset,
+      gingivalLineY,
+      overlayOpacity,
+      leftCommissureX: useViewportStore.getState().leftCommissureX,
+      rightCommissureX: useViewportStore.getState().rightCommissureX,
+      alignmentMarkers: useViewportStore.getState().alignmentMarkers,
+    },
       createdAt: caseRecord.createdAt,
       updatedAt: new Date().toISOString(),
     };
@@ -127,8 +144,25 @@ export const useCaseStore = create<CaseStore>((set, get) => ({
       }
     }
 
-    set({
-      caseRecord: {
+    let caseRecord: CaseRecord;
+    try {
+      caseRecord = saved.caseRecordJson
+        ? parseCaseRecord(JSON.parse(saved.caseRecordJson))
+        : {
+            id: saved.id,
+            title: saved.title,
+            workflowState: saved.workflowState as CaseRecord["workflowState"],
+            presentationReady: false,
+            exportBlocked: false,
+            activeDesignVersionId: "",
+            assets: [],
+            artifacts: [],
+            createdAt: saved.createdAt,
+            updatedAt: saved.updatedAt,
+          };
+    } catch (e) {
+      console.error("Corrupted case record data in DB, rebuilding legacy record:", e);
+      caseRecord = {
         id: saved.id,
         title: saved.title,
         workflowState: saved.workflowState as CaseRecord["workflowState"],
@@ -136,31 +170,43 @@ export const useCaseStore = create<CaseStore>((set, get) => ({
         exportBlocked: false,
         activeDesignVersionId: "",
         assets: [],
+        artifacts: [],
         createdAt: saved.createdAt,
         updatedAt: saved.updatedAt,
-      },
+      };
+    }
+
+    set({
+      caseRecord,
       mappingState: null,
     });
 
     // Restore design state
     useDesignStore.getState().applyDesignFromDB(plan, generatedDesign);
 
-    // Restore overlay settings and navigate to appropriate view
+    // Restore overlay settings and navigate to the canonical case stage
     const vs = useViewportStore.getState();
     vs.setMidlineX(saved.overlaySettings.midlineX);
     vs.setSmileArcY(saved.overlaySettings.smileArcY);
+    vs.setSmileArcLeftOffset(saved.overlaySettings.smileArcLeftOffset ?? 0);
+    vs.setSmileArcRightOffset(saved.overlaySettings.smileArcRightOffset ?? 0);
     vs.setGingivalLineY(saved.overlaySettings.gingivalLineY);
     vs.setOverlayOpacity(saved.overlaySettings.overlayOpacity);
-    vs.setActiveView(generatedDesign ? "simulate" : "capture");
+    vs.setLeftCommissureX(saved.overlaySettings.leftCommissureX ?? 25);
+    vs.setRightCommissureX(saved.overlaySettings.rightCommissureX ?? 75);
+    saved.overlaySettings.alignmentMarkers?.forEach((m) => vs.addAlignmentMarker(m));
+    vs.setActiveView(generatedDesign ? "design" : "import");
   },
 
   newCase: () => {
-    // Revoke photo object URLs and clear all import state
     useImportStore.getState().clearAll();
-    // Reset all design state (plan, design, variants, etc.)
     useDesignStore.getState().resetDesign();
-    // Navigate back to import view
-    useViewportStore.getState().setActiveView("capture");
+    useViewportStore.getState().setActiveView("import");
     set({ caseRecord: null, mappingState: null });
   },
 }));
+
+registerResetAllFn(() => {
+  useImportStore.getState().clearAll();
+  useDesignStore.getState().resetDesign();
+});

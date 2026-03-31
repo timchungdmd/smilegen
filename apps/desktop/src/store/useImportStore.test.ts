@@ -1,7 +1,9 @@
 import { useImportStore } from "./useImportStore";
+import { useAlignmentStore } from "./useAlignmentStore";
 
 beforeEach(() => {
   useImportStore.getState().clearAll();
+  useAlignmentStore.getState().resetAlignment();
 });
 
 afterEach(() => {
@@ -31,4 +33,25 @@ test("clearAll with null mouthMaskUrl does not call revokeObjectURL for mask", (
   useImportStore.getState().clearAll();
   // (Photos are also empty, so revokeObjectURL shouldn't be called at all)
   expect(revoke).not.toHaveBeenCalled();
+});
+
+test("selecting new photos resets persisted alignment landmarks", () => {
+  useAlignmentStore.getState().setAlignmentMode(true);
+  useAlignmentStore.getState().setPhotoLandmark("midline", 0.5, 0.5);
+
+  const file = new File(["photo"], "face.jpg", { type: "image/jpeg" });
+  const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:photo");
+
+  useImportStore.getState().handlePhotosSelected({
+    0: file,
+    length: 1,
+    item: () => file,
+    [Symbol.iterator]: function* () {
+      yield file;
+    },
+  } as unknown as FileList);
+
+  expect(createObjectUrl).toHaveBeenCalled();
+  expect(useAlignmentStore.getState().getCompletedPairCount()).toBe(0);
+  expect(useAlignmentStore.getState().isAlignmentMode).toBe(false);
 });

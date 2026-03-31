@@ -26,7 +26,7 @@ export const SHORTCUTS: ShortcutBinding[] = [
   { key: "[", description: "Previous variant", action: "prevVariant", scope: "design" },
   { key: "]", description: "Next variant", action: "nextVariant", scope: "design" },
   { key: "w", description: "Translate mode", action: "gimbal:translate", scope: "design" },
-  { key: "e", description: "Rotate mode", action: "gimbal:rotate", scope: "design" },
+  { key: "x", description: "Rotate mode", action: "gimbal:rotate", scope: "design" },
   { key: "r", description: "Scale mode", action: "gimbal:scale", scope: "design" },
   { key: "f", description: "Frame selected", action: "frameSelected", scope: "design" },
   { key: "?", description: "Show shortcuts", action: "showShortcuts", scope: "global" },

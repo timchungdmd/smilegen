@@ -1,41 +1,16 @@
-import { useCallback } from "react";
-import { useViewportStore, type AlignmentMarker } from "../../store/useViewportStore";
-
-/** Default incisal/cusp markers for the anterior teeth — mirrored from PhotoOverlay */
-const DEFAULT_INCISAL_MARKERS: Omit<AlignmentMarker, "id">[] = [
-  { type: "cusp", toothId: "6", x: 22, y: 52 },
-  { type: "incisal", toothId: "7", x: 32, y: 55 },
-  { type: "incisal", toothId: "8", x: 42, y: 56 },
-  { type: "incisal", toothId: "9", x: 58, y: 56 },
-  { type: "incisal", toothId: "10", x: 68, y: 55 },
-  { type: "cusp", toothId: "11", x: 78, y: 52 },
-];
-
-let markerIdCounter = 0;
-function nextMarkerId(): string {
-  return `m_${++markerIdCounter}_${Date.now()}`;
-}
+import { useViewportStore } from "../../store/useViewportStore";
 
 /**
  * Floating bottom toolbar for the photo overlay: zoom controls, pan reset,
- * and alignment marker tools. Subscribes directly to useViewportStore so it
- * can be dropped into any parent without prop drilling.
+ * and opacity. Subscribes directly to useViewportStore.
  */
-export function PhotoOverlayToolbar() {
+export function PhotoOverlayToolbar({ onZoom }: { onZoom: (delta: number) => void }) {
   const photoZoom = useViewportStore((s) => s.photoZoom);
-  const alignmentMarkers = useViewportStore((s) => s.alignmentMarkers);
+  const overlayOpacity = useViewportStore((s) => s.overlayOpacity);
   const setPhotoZoom = useViewportStore((s) => s.setPhotoZoom);
+  const setOverlayOpacity = useViewportStore((s) => s.setOverlayOpacity);
   const setPhotoPan = useViewportStore((s) => s.setPhotoPan);
-  const addAlignmentMarker = useViewportStore((s) => s.addAlignmentMarker);
-  const clearAlignmentMarkers = useViewportStore((s) => s.clearAlignmentMarkers);
-
-  const seedDefaultMarkers = useCallback(() => {
-    clearAlignmentMarkers();
-    DEFAULT_INCISAL_MARKERS.forEach((m) => {
-      addAlignmentMarker({ ...m, id: nextMarkerId() });
-    });
-  }, [clearAlignmentMarkers, addAlignmentMarker]);
-
+  
   return (
     <div
       style={{
@@ -57,7 +32,7 @@ export function PhotoOverlayToolbar() {
       {/* Zoom controls */}
       <button
         className="btn-icon"
-        onClick={() => setPhotoZoom(photoZoom - 0.15)}
+        onClick={() => onZoom(-0.15)}
         title="Zoom out"
         style={{ color: "#8b949e", padding: 4 }}
       >
@@ -70,7 +45,7 @@ export function PhotoOverlayToolbar() {
       </span>
       <button
         className="btn-icon"
-        onClick={() => setPhotoZoom(photoZoom + 0.15)}
+        onClick={() => onZoom(0.15)}
         title="Zoom in"
         style={{ color: "#8b949e", padding: 4 }}
       >
@@ -91,36 +66,28 @@ export function PhotoOverlayToolbar() {
 
       <div style={{ width: 1, height: 16, background: "var(--border)", margin: "0 2px" }} />
 
-      {/* Alignment marker tools */}
-      <button
-        className="btn-icon"
-        onClick={seedDefaultMarkers}
-        title="Place incisal edge & cusp markers"
-        style={{ color: "#06d6a0", padding: 4, fontSize: 10, gap: 3, display: "flex", alignItems: "center" }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0013 3.06V1h-2v2.06A8.994 8.994 0 003.06 11H1v2h2.06A8.994 8.994 0 0011 20.94V23h2v-2.06A8.994 8.994 0 0020.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" />
-        </svg>
-        Markers
-      </button>
-
-      {alignmentMarkers.length > 0 && (
-        <button
-          className="btn-icon"
-          onClick={clearAlignmentMarkers}
-          title="Clear all markers"
-          style={{ color: "#ef476f", padding: 4 }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
-          </svg>
-        </button>
-      )}
+      {/* Photo opacity */}
+      <span style={{ fontSize: 10, color: "var(--text-muted)", minWidth: 40 }}>
+        Opacity
+      </span>
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.05}
+        value={overlayOpacity}
+        onChange={(e) => setOverlayOpacity(Number(e.target.value))}
+        title={`Photo opacity: ${Math.round(overlayOpacity * 100)}%`}
+        style={{ width: 60, accentColor: "var(--accent, #00b4d8)", cursor: "pointer" }}
+      />
+      <span style={{ fontSize: 10, color: "var(--text-muted)", minWidth: 28, textAlign: "right" }}>
+        {Math.round(overlayOpacity * 100)}%
+      </span>
 
       <div style={{ width: 1, height: 16, background: "var(--border)", margin: "0 2px" }} />
 
       <span style={{ fontSize: 9, color: "var(--text-muted)" }}>
-        Alt+drag: pan &middot; Scroll: zoom
+        Shift+drag: pan &middot; Use +/- to zoom
       </span>
     </div>
   );

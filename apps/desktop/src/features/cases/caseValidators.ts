@@ -40,6 +40,24 @@ const AssetRecordSchema = z.object({
   localPath: z.string(),
 });
 
+const CaseArtifactRecordSchema = z.object({
+  id: z.string(),
+  kind: z.enum([
+    "source-photo",
+    "source-scan",
+    "alignment-session",
+    "design-revision",
+    "review-note",
+    "presentation-snapshot",
+    "handoff-package",
+  ]),
+  label: z.string(),
+  status: z.enum(["draft", "ready", "approved", "archived"]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  sourceAssetIds: z.array(z.string()),
+});
+
 const CaseRecordSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -56,6 +74,7 @@ const CaseRecordSchema = z.object({
   exportBlocked: z.boolean(),
   activeDesignVersionId: z.string(),
   assets: z.array(AssetRecordSchema),
+  artifacts: z.array(CaseArtifactRecordSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -73,8 +92,9 @@ const GeneratedToothDesignSchema = z.object({
   archAngle: z.number(),
   facialVolume: z.number(),
   trustState: z.enum(["ready", "needs_correction", "blocked"]),
-  stl: z.string(),
-  previewTriangles: z.array(z.any()),
+  previewTriangles: z.array(z.any()).optional(),
+  sourceMesh: z.any().optional(),
+  isHighFidelity: z.boolean().optional(),
 });
 
 const GeneratedVariantDesignSchema = z.object({
@@ -84,7 +104,6 @@ const GeneratedVariantDesignSchema = z.object({
   lengthTendency: z.string(),
   additiveIntensity: z.string(),
   teeth: z.array(GeneratedToothDesignSchema),
-  combinedStl: z.string(),
 });
 
 const GeneratedSmileDesignSchema = z.object({

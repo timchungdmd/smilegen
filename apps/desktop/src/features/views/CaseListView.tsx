@@ -6,10 +6,10 @@ import { useCaseStore } from "../../store/useCaseStore";
 
 const CLINICAL_STAGES = [
   { id: "import", label: "Import" },
-  { id: "align", label: "Align" },
   { id: "design", label: "Design" },
   { id: "review", label: "Review" },
   { id: "present", label: "Present" },
+  { id: "handoff", label: "Handoff" },
 ] as const;
 
 /** Maps legacy workflowState values to how many pipeline stages are complete */
@@ -28,7 +28,7 @@ function stagesComplete(workflowState: string): number {
     case "doctor_approved":
       return 4; // Validate done
     case "exported":
-      return 6; // All done
+      return 5;
     default:
       return 0;
   }

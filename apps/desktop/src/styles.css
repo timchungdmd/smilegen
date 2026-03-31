@@ -113,6 +113,7 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--text-muted);
   border-radius: 3px;
+  border: 1px solid var(--bg-primary);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-secondary);
@@ -956,14 +957,15 @@ kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: var(--accent-dim);
   color: var(--accent);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 800;
   flex-shrink: 0;
+  margin-top: 2px;
 }
 
 /* ===== Import Cards ===== */
@@ -1537,6 +1539,16 @@ kbd {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.guided-stage-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-emphasis);
+  transform: translateY(-1px);
+}
+.guided-stage-chip:active {
+  transform: translateY(0);
 }
 .guided-stage-chip.is-ready {
   border-color: rgba(6, 214, 160, 0.28);
@@ -1747,4 +1759,47 @@ kbd {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+/* ── Resize Handles ── */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 100;
+  transition: all 0.2s;
+  background: transparent;
+}
+.resize-handle:hover, 
+.resize-handle:active {
+  background: rgba(88, 166, 255, 0.4);
+}
+.resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 40px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 1px;
+  transition: all 0.2s;
+}
+.resize-handle:hover::after {
+  background: #fff;
+  height: 60px;
+}
+.resize-handle--right { 
+  right: -4px; 
+}
+.resize-handle--left { 
+  left: -4px; 
+}
+
+/* ── Split Layout Utilities ── */
+.workspace-canvas-panel {
+  border-left: 1px solid var(--border);
 }

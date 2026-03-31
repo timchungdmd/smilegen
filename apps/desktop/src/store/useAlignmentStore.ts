@@ -11,28 +11,16 @@ export type AlignmentLandmarkId =
   | "midline"
   | "right-central"
   | "left-central"
-  | "right-lateral"
-  | "left-lateral"
   | "right-canine"
-  | "left-canine"
-  | "right-first-premolar"
-  | "left-first-premolar"
-  | "right-second-premolar"
-  | "left-second-premolar";
+  | "left-canine";
 
 /** Solve weight by landmark ID — higher = more influence on the transform solve */
 export const LANDMARK_WEIGHTS: Record<AlignmentLandmarkId, number> = {
-  "midline":               6,
-  "right-central":         4,
-  "left-central":          4,
-  "right-lateral":         2,
-  "left-lateral":          2,
-  "right-canine":          1,
-  "left-canine":           1,
-  "right-first-premolar":  1,
-  "left-first-premolar":   1,
-  "right-second-premolar": 1,
-  "left-second-premolar":  1,
+  "midline": 6,
+  "right-central": 4,
+  "left-central": 4,
+  "right-canine": 1,
+  "left-canine": 1,
 };
 
 /**
@@ -40,16 +28,10 @@ export const LANDMARK_WEIGHTS: Record<AlignmentLandmarkId, number> = {
  * Used for anatomical scale validation after Procrustes solve.
  */
 export const LANDMARK_MIDLINE_DISTANCE_MM: Partial<Record<AlignmentLandmarkId, number>> = {
-  "right-central":         4.0,
-  "left-central":          4.0,
-  "right-lateral":         9.5,
-  "left-lateral":          9.5,
-  "right-canine":          16.5,
-  "left-canine":           16.5,
-  "right-first-premolar":  23.0,
-  "left-first-premolar":   23.0,
-  "right-second-premolar": 28.0,
-  "left-second-premolar":  28.0,
+  "right-central": 4.0,
+  "left-central": 4.0,
+  "right-canine": 16.5,
+  "left-canine": 16.5,
 };
 
 export interface AlignmentLandmark {
@@ -130,6 +112,7 @@ interface AlignmentActions {
   canSolve: () => boolean;
   resetAlignment: () => void;
   setViewDimensions: (width: number, height: number) => void;
+  solve: () => AlignmentResult | null;
 }
 
 export type AlignmentStoreType = AlignmentState & AlignmentActions;
@@ -138,18 +121,12 @@ const DEFAULT_LANDMARKS: AlignmentLandmark[] = [
   { id: "midline", anatomicId: "midline", label: "Midline", color: "#00b4d8", required: true, photoCoord: null, modelCoord: null },
   { id: "right-central", anatomicId: "right-central-incisor", label: "Right Central", color: "#4ade80", required: true, photoCoord: null, modelCoord: null },
   { id: "left-central", anatomicId: "left-central-incisor", label: "Left Central", color: "#f59e0b", required: true, photoCoord: null, modelCoord: null },
-  { id: "right-lateral", anatomicId: "right-lateral-incisor", label: "Right Lateral", color: "#60a5fa", required: false, photoCoord: null, modelCoord: null },
-  { id: "left-lateral", anatomicId: "left-lateral-incisor", label: "Left Lateral", color: "#a78bfa", required: false, photoCoord: null, modelCoord: null },
-  { id: "right-canine", anatomicId: "right-canine", label: "Right Canine", color: "#f97316", required: false, photoCoord: null, modelCoord: null },
-  { id: "left-canine", anatomicId: "left-canine", label: "Left Canine", color: "#c084fc", required: false, photoCoord: null, modelCoord: null },
-  { id: "right-first-premolar", anatomicId: "right-first-premolar", label: "Right 1st Premolar", color: "#fb7185", required: false, photoCoord: null, modelCoord: null },
-  { id: "left-first-premolar", anatomicId: "left-first-premolar", label: "Left 1st Premolar", color: "#34d399", required: false, photoCoord: null, modelCoord: null },
-  { id: "right-second-premolar", anatomicId: "right-second-premolar", label: "Right 2nd Premolar", color: "#fbbf24", required: false, photoCoord: null, modelCoord: null },
-  { id: "left-second-premolar", anatomicId: "left-second-premolar", label: "Left 2nd Premolar", color: "#94a3b8", required: false, photoCoord: null, modelCoord: null },
+  { id: "right-canine", anatomicId: "right-canine", label: "Right Canine", color: "#f97316", required: true, photoCoord: null, modelCoord: null },
+  { id: "left-canine", anatomicId: "left-canine", label: "Left Canine", color: "#c084fc", required: true, photoCoord: null, modelCoord: null },
 ];
 
 // Bumped version key prevents stale v2 persisted data from conflicting
-const ALIGNMENT_STORAGE_KEY = "smilegen-landmark-alignment-v3";
+const ALIGNMENT_STORAGE_KEY = "smilegen-landmark-alignment-v5";
 
 const INITIAL_ALIGNMENT_STATE: AlignmentState = {
   isAlignmentMode: false,
@@ -357,6 +334,15 @@ resetAlignment: () =>
           : null,
       };
     }),
+
+  solve: () => {
+    const state = get();
+    const result = trySolveAlignment(state.landmarks, state.viewWidth, state.viewHeight);
+    if (result) {
+      set({ alignmentResult: result });
+    }
+    return result;
+  },
 }),
     {
       name: ALIGNMENT_STORAGE_KEY,

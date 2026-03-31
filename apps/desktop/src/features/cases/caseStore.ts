@@ -15,6 +15,7 @@ export function createEmptyCase(title: string): CaseRecord {
     exportBlocked: false,
     activeDesignVersionId: createId("design"),
     assets: [],
+    artifacts: [],
     createdAt: now,
     updatedAt: now
   };

@@ -13,12 +13,14 @@ export interface AppSettings {
   expertMode: boolean;
 }
 
+import { ARCH_DEFAULTS } from "../shared/archDefaults";
+
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
   toothNumbering: "universal",
-  defaultArchDepth: 15,
-  defaultArchHalfWidth: 35,
-  defaultCameraDistance: 250,
+  defaultArchDepth: ARCH_DEFAULTS.archDepth,
+  defaultArchHalfWidth: ARCH_DEFAULTS.archHalfWidth,
+  defaultCameraDistance: ARCH_DEFAULTS.cameraDistance,
   exportFormat: "stl_binary",
   autoSave: true,
   autoDetectLandmarks: true,

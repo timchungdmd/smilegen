@@ -84,6 +84,7 @@ export function AppShell() {
       <Sidebar activeView={activeView} />
 <Workspace activeView={activeView} />
 
+
       {/* Drag-and-drop overlay */}
       {isDragging && (
         <div

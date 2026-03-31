@@ -1,44 +1,17 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useImportStore } from "../../store/useImportStore";
-import { useSidecarStore } from "../../store/useSidecarStore";
 import { useViewportStore } from "../../store/useViewportStore";
+import { useDesignStore } from "../../store/useDesignStore";
 import { CaptureView } from "./CaptureView";
 
-// Mock vision client
-vi.mock("../../services/visionClient", () => ({
-  detectLandmarks: vi.fn(),
-  getMouthMask: vi.fn(),
-}));
-
-import { detectLandmarks, getMouthMask } from "../../services/visionClient";
-const mockDetectLandmarks = detectLandmarks as ReturnType<typeof vi.fn>;
-const mockGetMouthMask = getMouthMask as ReturnType<typeof vi.fn>;
-
-// Mock 3D / heavy components that CaptureView pulls in transitively
+// Mock heavy components that CaptureView pulls in transitively
 vi.mock("../../features/viewer/SceneCanvas", () => ({
   SceneCanvas: () => <div data-testid="scene-canvas">3D Viewer Mock</div>,
 }));
 
 vi.mock("../../features/overlay/PhotoOverlay", () => ({
   PhotoOverlay: () => <div data-testid="photo-overlay">Photo Overlay Mock</div>,
-}));
-
-vi.mock("../capture/AlignmentScanViewer", () => ({
-  AlignmentScanViewer: ({
-    onPickPoint,
-    isPicking,
-  }: {
-    onPickPoint: (p: { x: number; y: number; z: number }) => void;
-    isPicking: boolean;
-  }) => (
-    <button
-      data-testid="scan-pick-btn"
-      onClick={() => isPicking && onPickPoint({ x: 4, y: 0, z: 0 })}
-    >
-      Mock Scan
-    </button>
-  ),
 }));
 
 vi.mock("@react-three/fiber", () => ({
@@ -66,7 +39,6 @@ vi.mock("idb-keyval", () => ({
   update: vi.fn().mockResolvedValue(undefined),
 }));
 
-// Helper: set sidecar state directly
 const MOCK_ARCH_SCAN_MESH = {
   name: "test.stl",
   bounds: {
@@ -80,83 +52,13 @@ const MOCK_ARCH_SCAN_MESH = {
   ],
 };
 
-const MOCK_RECT: DOMRect = {
-  left: 100,
-  top: 200,
-  width: 400,
-  height: 300,
-  right: 500,
-  bottom: 500,
-  x: 100,
-  y: 200,
-  toJSON: () => ({}),
-};
-
-function mockRect() {
-  return vi
-    .spyOn(Element.prototype, "getBoundingClientRect")
-    .mockReturnValue(MOCK_RECT);
-}
-
-function setSidecarReady() {
-  act(() => {
-    useSidecarStore.setState({ sidecarState: "ready" });
-  });
-}
-
-function setSidecarStarting() {
-  act(() => {
-    useSidecarStore.setState({ sidecarState: "starting" });
-  });
-}
-
-function setSidecarUnavailable() {
-  act(() => {
-    useSidecarStore.setState({ sidecarState: "unavailable" });
-  });
-}
-
-// Helper: inject a fake uploaded photo into import store
-function injectPhoto() {
-  act(() => {
-    useImportStore.setState({
-      uploadedPhotos: [
-        {
-          name: "test.jpg",
-          url: "blob:http://localhost/test-photo",
-        },
-      ],
-    });
-  });
-}
-
-// Helper: build a mock VisionLandmarkResult
-function makeLandmarkResult() {
-  return {
-    midlineX: 0.5,
-    commissureLeft: { x: 0.2, y: 0.6 },
-    commissureRight: { x: 0.8, y: 0.6 },
-    smileArcY: 0.55,
-    gingivalLineY: 0.45,
-    lipContour: {
-      outer: Array.from({ length: 22 }, () => ({ x: 0.5, y: 0.55 })),
-      inner: Array.from({ length: 22 }, () => ({ x: 0.5, y: 0.58 })),
-    },
-    mouthMaskBbox: { xMin: 0.2, yMin: 0.5, xMax: 0.8, yMax: 0.7 },
-  };
-}
-
 beforeEach(() => {
-  // Reset all stores to clean state
   act(() => {
     useImportStore.getState().clearAll();
-    useSidecarStore.setState({ sidecarState: "starting" });
     useViewportStore.getState().clearAlignmentMarkers();
     useViewportStore.setState({ activeView: "import" });
   });
   vi.clearAllMocks();
-
-  // Stub fetch for blob URL reads
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({
@@ -170,175 +72,136 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("Auto-detect button disabled states", () => {
-  it("is disabled when sidecar is starting (no photos)", () => {
-    setSidecarStarting();
+describe("CaptureView (Import stage wrapper)", () => {
+  it("renders with Import header", () => {
     render(<CaptureView />);
-    const btn = screen.getByRole("button", { name: /services loading/i });
-    expect(btn).toBeDisabled();
-  });
-
-  it("is disabled when sidecar is ready but no photos uploaded", () => {
-    setSidecarReady();
-    render(<CaptureView />);
-    const btn = screen.getByRole("button", { name: /auto-detect/i });
-    expect(btn).toBeDisabled();
-  });
-
-  it("is disabled when sidecar is unavailable", () => {
-    setSidecarUnavailable();
-    render(<CaptureView />);
-    const btn = screen.getByRole("button", { name: /vision offline/i });
-    expect(btn).toBeDisabled();
-  });
-});
-
-describe("collapsed import and align workflow framing", () => {
-  it("shows Import framing by default when the import view is active", () => {
-    act(() => {
-      useViewportStore.setState({ activeView: "import" });
-    });
-
-    render(<CaptureView />);
-
     expect(screen.getByText(/^Import$/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /continue to align/i })).toBeInTheDocument();
   });
 
-  it("shows Align framing when the align view is active", () => {
-    act(() => {
-      useViewportStore.setState({ activeView: "align" });
-    });
-
+  it("shows Import Assets heading in the panel", () => {
     render(<CaptureView />);
-
-    expect(screen.getByText(/^Align$/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /continue to design/i })).toBeInTheDocument();
+    expect(screen.getByText(/Import Assets/)).toBeInTheDocument();
   });
 
-  it("enables Import progression when either a photo or scan is available", () => {
-    act(() => {
-      useViewportStore.setState({ activeView: "import" });
-      useImportStore.setState({
-        uploadedPhotos: [{ name: "smile.jpg", url: "blob:smile" }],
-        archScanName: undefined,
-      });
-    });
-
+  it("shows upload progress indicator", () => {
     render(<CaptureView />);
-
-    expect(screen.getByRole("button", { name: /continue to align/i })).toBeEnabled();
-
-    act(() => {
-      useImportStore.setState({
-        uploadedPhotos: [],
-        archScanName: "arch.stl",
-      });
-    });
-
-    expect(screen.getByRole("button", { name: /continue to align/i })).toBeEnabled();
+    expect(screen.getByText(/0\/2 required/)).toBeInTheDocument();
   });
 
-  it("keeps Align progression disabled until both photo and scan are available", () => {
-    act(() => {
-      useViewportStore.setState({ activeView: "align" });
-      useImportStore.setState({
-        uploadedPhotos: [{ name: "smile.jpg", url: "blob:smile" }],
-        archScanName: undefined,
-      });
-    });
-
+  it("shows photo drop zone", () => {
     render(<CaptureView />);
-
-    expect(screen.getByRole("button", { name: /continue to design/i })).toBeDisabled();
-
-    act(() => {
-      useImportStore.setState({
-        uploadedPhotos: [],
-        archScanName: "arch.stl",
-      });
-    });
-
-    expect(screen.getByRole("button", { name: /continue to design/i })).toBeDisabled();
-
-    act(() => {
-      useImportStore.setState({
-        uploadedPhotos: [{ name: "smile.jpg", url: "blob:smile" }],
-        archScanName: "arch.stl",
-      });
-    });
-
-    expect(screen.getByRole("button", { name: /continue to design/i })).toBeEnabled();
+    expect(screen.getByText(/Drop photos here or click to browse/i)).toBeInTheDocument();
   });
 
-  it("preserves the real wizard phase when moving from Import to Align", async () => {
-    mockRect();
+  it("shows arch scan drop zone", () => {
+    render(<CaptureView />);
+    expect(screen.getByText(/Drop 3D scan here or click to browse/i)).toBeInTheDocument();
+  });
+
+  it("shows tooth library section", () => {
+    render(<CaptureView />);
+    expect(screen.getByText(/Tooth Library/)).toBeInTheDocument();
+  });
+});
+
+describe("Import panel upload state", () => {
+  it("shows 1/2 required when photo is uploaded", () => {
     act(() => {
-      useViewportStore.setState({ activeView: "import" });
       useImportStore.setState({
         uploadedPhotos: [{ name: "smile.jpg", url: "blob:smile" }],
+      });
+    });
+    render(<CaptureView />);
+    expect(screen.getByText(/1\/2 required/)).toBeInTheDocument();
+  });
+
+  it("shows 1/2 required when scan is uploaded", () => {
+    act(() => {
+      useImportStore.setState({
+        archScanName: "arch.stl",
         archScanMesh: MOCK_ARCH_SCAN_MESH as any,
-        archScanName: "arch.stl",
       });
     });
-
     render(<CaptureView />);
-
-    await userEvent.click(screen.getByRole("button", { name: /align photo/i }));
-    const canvas = document.querySelector<HTMLElement>('[style*="crosshair"]')!;
-    act(() => {
-      fireEvent.click(canvas, { clientX: 300, clientY: 350 });
-      fireEvent.click(canvas, { clientX: 260, clientY: 350 });
-    });
-    await userEvent.click(screen.getByTestId("next-btn"));
-
-    expect(screen.getByTestId("scan-pick-btn")).toBeInTheDocument();
-
-    act(() => {
-      useViewportStore.setState({ activeView: "align" });
-    });
-
-    expect(screen.getByText(/^Align$/)).toBeInTheDocument();
-    expect(screen.getByTestId("scan-pick-btn")).toBeInTheDocument();
+    expect(screen.getByText(/1\/2 required/)).toBeInTheDocument();
   });
+
+  it("shows 2/2 required when both photo and scan are uploaded", () => {
+    act(() => {
+      useImportStore.setState({
+        uploadedPhotos: [{ name: "smile.jpg", url: "blob:smile" }],
+        archScanName: "arch.stl",
+        archScanMesh: MOCK_ARCH_SCAN_MESH as any,
+      });
+    });
+    render(<CaptureView />);
+    expect(screen.getByText(/2\/2 required/)).toBeInTheDocument();
+  });
+
+  it("shows Generate Design button when both photo and scan are uploaded", () => {
+    act(() => {
+      useImportStore.setState({
+        uploadedPhotos: [{ name: "smile.jpg", url: "blob:smile" }],
+        archScanName: "arch.stl",
+        archScanMesh: MOCK_ARCH_SCAN_MESH as any,
+      });
+    });
+    render(<CaptureView />);
+    expect(screen.getByRole("button", { name: /Generate Design/i })).toBeInTheDocument();
+  });
+
+  // Generate Design button is inside ImportPanel and requires:
+  // 1. validation.ok (photos + scan uploaded)
+  // 2. activeCollectionId selected (from tooth morphology dropdown)
+  // This is tested at the IntegrationTest level in App.test.tsx
 });
 
-describe("Auto-detect error handling", () => {
-  it("shows error banner when detectLandmarks throws", async () => {
-    setSidecarReady();
-    injectPhoto();
-    mockDetectLandmarks.mockRejectedValueOnce(
-      new Error("No face detected in the uploaded photo.")
-    );
-    mockGetMouthMask.mockResolvedValue(new Blob(["mask"]));
-
+describe("Continue button navigation", () => {
+  it("continue button is disabled when no scan is uploaded", () => {
     render(<CaptureView />);
-    const btn = screen.getByRole("button", { name: /auto-detect/i });
-    await userEvent.click(btn);
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(/No face detected in the uploaded photo./i)
-      ).toBeInTheDocument();
-    });
+    const btn = screen.getByRole("button", { name: /^Continue$/i });
+    expect(btn).toBeDisabled();
   });
-});
 
-describe("Auto-detect success", () => {
-  it("updates viewport store with 100x-scaled landmark values on success", async () => {
-    setSidecarReady();
-    injectPhoto();
-    mockDetectLandmarks.mockResolvedValueOnce(makeLandmarkResult());
-    mockGetMouthMask.mockResolvedValueOnce(new Blob(["mask-png"], { type: "image/png" }));
-
+  it("continue button is disabled when no photo is uploaded", () => {
+    act(() => {
+      useImportStore.setState({
+        archScanName: "arch.stl",
+        archScanMesh: MOCK_ARCH_SCAN_MESH as any,
+      });
+    });
     render(<CaptureView />);
-    const btn = screen.getByRole("button", { name: /auto-detect/i });
-    await userEvent.click(btn);
+    const btn = screen.getByRole("button", { name: /^Continue$/i });
+    expect(btn).toBeDisabled();
+  });
+
+  it("continue button is enabled when both photo and scan are available", () => {
+    act(() => {
+      useImportStore.setState({
+        uploadedPhotos: [{ name: "smile.jpg", url: "blob:smile" }],
+        archScanName: "arch.stl",
+        archScanMesh: MOCK_ARCH_SCAN_MESH as any,
+      });
+    });
+    render(<CaptureView />);
+    const btn = screen.getByRole("button", { name: /^Continue$/i });
+    expect(btn).toBeEnabled();
+  });
+
+  it("continue button navigates to design view", async () => {
+    act(() => {
+      useImportStore.setState({
+        uploadedPhotos: [{ name: "smile.jpg", url: "blob:smile" }],
+        archScanName: "arch.stl",
+        archScanMesh: MOCK_ARCH_SCAN_MESH as any,
+      });
+    });
+    render(<CaptureView />);
+
+    await userEvent.click(screen.getByRole("button", { name: /^Continue$/i }));
 
     await waitFor(() => {
-      const vpState = useViewportStore.getState();
-      expect(vpState.midlineX).toBeCloseTo(50); // 0.5 * 100
-      expect(vpState.smileArcY).toBeCloseTo(55); // 0.55 * 100
+      expect(useViewportStore.getState().activeView).toBe("design");
     });
   });
 });

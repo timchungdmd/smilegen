@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useAlignmentStore } from "./useAlignmentStore";
 import type { ParsedStlMesh } from "../features/import/stlParser";
 import { parseMeshBuffer } from "../features/import/meshParser";
 import { inferToothIdFromFilename } from "../features/import/importService";
@@ -70,6 +71,7 @@ export const useImportStore = create<ImportStore>((set, get) => ({
   handlePhotosSelected: (files) => {
     const { uploadedPhotos } = get();
     uploadedPhotos.forEach((p) => URL.revokeObjectURL(p.url));
+    useAlignmentStore.getState().resetAlignment();
     set({
       uploadedPhotos: Array.from(files ?? []).map((f) => ({
         name: f.name,
@@ -81,7 +83,7 @@ export const useImportStore = create<ImportStore>((set, get) => ({
       })),
       importError: null,
     });
-  },
+    },
 
   handleArchScanSelected: async (files) => {
     const file = files?.[0];
@@ -91,11 +93,13 @@ export const useImportStore = create<ImportStore>((set, get) => ({
     }
     try {
       const buffer = await readFileAsArrayBuffer(file);
+      useAlignmentStore.getState().resetAlignment();
       set({
         archScanMesh: parseMeshBuffer(buffer, file.name),
         archScanName: file.name,
         importError: null,
       });
+      
     } catch (error) {
       set({
         archScanMesh: null,
@@ -141,10 +145,14 @@ export const useImportStore = create<ImportStore>((set, get) => ({
 
   clearPhotos: () => {
     get().uploadedPhotos.forEach((p) => URL.revokeObjectURL(p.url));
+    useAlignmentStore.getState().resetAlignment();
     set({ uploadedPhotos: [] });
   },
 
-  clearArchScan: () => set({ archScanMesh: null, archScanName: undefined, importError: null }),
+  clearArchScan: () => {
+    useAlignmentStore.getState().resetAlignment();
+    set({ archScanMesh: null, archScanName: undefined, importError: null });
+  },
 
   removeToothModel: (toothId) =>
     set((s) => ({ uploadedToothModels: s.uploadedToothModels.filter((m) => m.toothId !== toothId) })),
@@ -161,6 +169,7 @@ export const useImportStore = create<ImportStore>((set, get) => ({
     const { uploadedPhotos, mouthMaskUrl } = get();
     uploadedPhotos.forEach((p) => URL.revokeObjectURL(p.url));
     if (mouthMaskUrl) URL.revokeObjectURL(mouthMaskUrl);
+    useAlignmentStore.getState().resetAlignment();
     set({
       uploadedPhotos: [],
       archScanMesh: null,

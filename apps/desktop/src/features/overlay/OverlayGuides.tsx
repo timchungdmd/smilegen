@@ -1,6 +1,13 @@
 import type { AlignmentCalibration } from "../alignment/archModel";
 
-type GuideType = "midline" | "smileArc" | "gingival" | "commissureL" | "commissureR";
+type GuideType =
+  | "midline"
+  | "smileArc"
+  | "smileArcLeft"
+  | "smileArcRight"
+  | "gingival"
+  | "commissureL"
+  | "commissureR";
 
 interface SmileArcData {
   points: { x: number; y: number }[];
@@ -44,6 +51,9 @@ export function OverlayGuides({
 }: OverlayGuidesProps) {
   const lx = (leftCommissureX / 100) * viewWidth;
   const rx = (rightCommissureX / 100) * viewWidth;
+  const sideLabelRightX = viewWidth - 12;
+  const sideLabelLeftX = 12;
+  const midlineLabelX = calibration.midlineX > viewWidth / 2 ? sideLabelLeftX : sideLabelRightX;
 
   return (
     <>
@@ -55,19 +65,54 @@ export function OverlayGuides({
         const midPt = pts[Math.floor(pts.length / 2)];
         return (
           <g>
+            <path
+              data-testid="guide-drag-smileArc"
+              d={smileArcPath}
+              fill="none"
+              stroke="transparent"
+              strokeWidth="18"
+              cursor="ns-resize"
+              onMouseDown={(e) => onGuideMouseDown("smileArc", e)}
+            />
             {/* Glow */}
             <path d={smileArcPath} fill="none" stroke="#00b4d8" strokeWidth="5" opacity="0.1" strokeLinecap="round" />
             {/* Main arc */}
             <path d={smileArcPath} fill="none" stroke="#00b4d8" strokeWidth="2" opacity="0.8" strokeLinecap="round" />
+            <g
+              data-testid="guide-handle-smileArc-left"
+              cursor="ns-resize"
+              onMouseDown={(e) => onGuideMouseDown("smileArcLeft", e)}
+            >
+              <circle cx={leftPt.x} cy={leftPt.y} r="10" fill="transparent" />
+              <circle cx={leftPt.x} cy={leftPt.y} r="4" fill="#00b4d8" opacity="0.8" stroke="#fff" strokeWidth="1.2" />
+            </g>
             {/* Center drag handle */}
-            <g cursor="ns-resize" onMouseDown={(e) => onGuideMouseDown("smileArc", e)}>
+            <g
+              data-testid="guide-handle-smileArc-center"
+              cursor="ns-resize"
+              onMouseDown={(e) => onGuideMouseDown("smileArc", e)}
+            >
               <circle cx={midPt.x} cy={midPt.y} r="10" fill="transparent" />
               <circle cx={midPt.x} cy={midPt.y} r="5" fill="#00b4d8" opacity="0.9" stroke="#fff" strokeWidth="1.5" />
             </g>
-            {/* Endpoints */}
-            <circle cx={leftPt.x} cy={leftPt.y} r="3" fill="#00b4d8" opacity="0.5" />
-            <circle cx={rightPt.x} cy={rightPt.y} r="3" fill="#00b4d8" opacity="0.5" />
-            <text x={rightPt.x + 8} y={rightPt.y + 4} fill="#00b4d8" fontSize="9" fontWeight="500" opacity="0.7">
+            <g
+              data-testid="guide-handle-smileArc-right"
+              cursor="ns-resize"
+              onMouseDown={(e) => onGuideMouseDown("smileArcRight", e)}
+            >
+              <circle cx={rightPt.x} cy={rightPt.y} r="10" fill="transparent" />
+              <circle cx={rightPt.x} cy={rightPt.y} r="4" fill="#00b4d8" opacity="0.8" stroke="#fff" strokeWidth="1.2" />
+            </g>
+            <text
+              data-testid="guide-label-smileArc"
+              x={sideLabelRightX}
+              y={Math.max(18, rightPt.y - 10)}
+              textAnchor="end"
+              fill="#00b4d8"
+              fontSize="9"
+              fontWeight="600"
+              opacity="0.82"
+            >
               Smile Arc
             </text>
           </g>
@@ -81,6 +126,17 @@ export function OverlayGuides({
         const y2 = viewHeight * 0.92;
         return (
           <g>
+            <line
+              data-testid="guide-drag-midline"
+              x1={mx}
+              y1={y1}
+              x2={mx}
+              y2={y2}
+              stroke="transparent"
+              strokeWidth="18"
+              cursor="ew-resize"
+              onMouseDown={(e) => onGuideMouseDown("midline", e)}
+            />
             <line x1={mx} y1={y1} x2={mx} y2={y2} stroke="#ef476f" strokeWidth="1" strokeDasharray="6 4" opacity="0.5" />
             {/* Top handle */}
             <g cursor="ew-resize" onMouseDown={(e) => onGuideMouseDown("midline", e)}>
@@ -92,7 +148,16 @@ export function OverlayGuides({
               <circle cx={mx} cy={y2} r="10" fill="transparent" />
               <circle cx={mx} cy={y2} r="4" fill="#ef476f" opacity="0.5" />
             </g>
-            <text x={mx + 8} y={y1 + 4} fill="#ef476f" fontSize="9" fontWeight="500" opacity="0.7">
+            <text
+              data-testid="guide-label-midline"
+              x={midlineLabelX}
+              y={18}
+              textAnchor={midlineLabelX === sideLabelLeftX ? "start" : "end"}
+              fill="#ef476f"
+              fontSize="9"
+              fontWeight="600"
+              opacity="0.82"
+            >
               Midline
             </text>
           </g>
@@ -104,14 +169,45 @@ export function OverlayGuides({
         const gy = (gingivalLineY / 100) * viewHeight;
         return (
           <g>
+            <line
+              data-testid="guide-drag-gingival"
+              x1={lx}
+              y1={gy}
+              x2={rx}
+              y2={gy}
+              stroke="transparent"
+              strokeWidth="18"
+              cursor="ns-resize"
+              onMouseDown={(e) => onGuideMouseDown("gingival", e)}
+            />
             <line x1={lx} y1={gy} x2={rx} y2={gy} stroke="#d4736c" strokeWidth="1.5" strokeDasharray="6 4" opacity="0.5" />
             {/* Left handle */}
-            <g cursor="ns-resize" onMouseDown={(e) => onGuideMouseDown("gingival", e)}>
+            <g
+              data-testid="guide-handle-gingival-left"
+              cursor="ns-resize"
+              onMouseDown={(e) => onGuideMouseDown("gingival", e)}
+            >
               <circle cx={lx} cy={gy} r="10" fill="transparent" />
               <circle cx={lx} cy={gy} r="5" fill="#d4736c" opacity="0.85" stroke="#fff" strokeWidth="1.5" />
             </g>
-            <circle cx={rx} cy={gy} r="3" fill="#d4736c" opacity="0.5" />
-            <text x={rx + 8} y={gy + 4} fill="#d4736c" fontSize="9" fontWeight="500" opacity="0.7">
+            <g
+              data-testid="guide-handle-gingival-right"
+              cursor="ns-resize"
+              onMouseDown={(e) => onGuideMouseDown("gingival", e)}
+            >
+              <circle cx={rx} cy={gy} r="10" fill="transparent" />
+              <circle cx={rx} cy={gy} r="4" fill="#d4736c" opacity="0.72" stroke="#fff" strokeWidth="1.2" />
+            </g>
+            <text
+              data-testid="guide-label-gingival"
+              x={sideLabelRightX}
+              y={Math.max(18, gy - 10)}
+              textAnchor="end"
+              fill="#d4736c"
+              fontSize="9"
+              fontWeight="600"
+              opacity="0.82"
+            >
               Gingival
             </text>
           </g>

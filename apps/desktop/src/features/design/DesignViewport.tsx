@@ -6,12 +6,15 @@ import { PhotoOverlay } from "../overlay/PhotoOverlay";
 import { ErrorBoundary } from "../layout/ErrorBoundary";
 
 /**
- * Centre panel of the Design view: 3D canvas or photo overlay depending on
- * the active design tab, followed by the tooth-proportion strip.
- * Reads state directly from stores — no props required.
+ * Legacy design viewport used only by the older planning path.
+ *
+ * The primary workflow no longer swaps the viewer surface by tab. The
+ * production workspace keeps a constant viewer-container in `Workspace` and
+ * uses the design tabs only to switch left-panel controls.
  */
 export function DesignViewport() {
   const designTab = useViewportStore((s) => s.designTab);
+  const layoutMode = useViewportStore((s) => s.layoutMode);
   const archScanMesh = useImportStore((s) => s.archScanMesh);
   const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
   const activeVariant = useDesignStore(selectActiveVariant);
@@ -22,47 +25,92 @@ export function DesignViewport() {
   return (
     <>
       {/* Viewport */}
-      <div style={{ flex: 1, position: "relative", overflow: "hidden", padding: 12 }}>
-        {designTab === "3d" ? (
-          <ErrorBoundary label="3D Canvas">
-            <SceneCanvas
-              archScanMesh={archScanMesh}
-              activeVariant={activeVariant}
-              selectedToothId={selectedToothId}
-              onSelectTooth={selectTooth}
-            />
-          </ErrorBoundary>
-        ) : uploadedPhotos.length > 0 ? (
-          <ErrorBoundary label="Photo Overlay">
-            <PhotoOverlay
-              photo={uploadedPhotos[0]}
-              activeVariant={activeVariant}
-              selectedToothId={selectedToothId}
-              onSelectTooth={selectTooth}
-              onMoveTooth={moveTooth}
-            />
-          </ErrorBoundary>
-        ) : (
-          <div
-            style={{
-              height: "100%",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "var(--text-muted)",
-              gap: 8
-            }}
-          >
-            <div>Import photos to use the photo overlay</div>
-            <div style={{ fontSize: 11, maxWidth: 320, textAlign: "center", lineHeight: 1.5 }}>
-              Upload a front smile photo in the Import tab, then switch here to
-              align the design with the patient&apos;s face. Drag the yellow L/R
-              commissure guides to match the smile corners.
+      {layoutMode === "portrait" ? (
+        <div style={{ flex: 1, position: "relative", overflow: "hidden", padding: 12 }}>
+          {/* Photo fills main area */}
+          {uploadedPhotos.length > 0 ? (
+            <ErrorBoundary label="Photo Overlay">
+              <PhotoOverlay
+                photo={uploadedPhotos[0]}
+                activeVariant={activeVariant}
+                selectedToothId={selectedToothId}
+                onSelectTooth={selectTooth}
+                onMoveTooth={moveTooth}
+              />
+            </ErrorBoundary>
+          ) : (
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)" }}>
+              Upload a photo to use portrait mode
             </div>
-          </div>
-        )}
-      </div>
+          )}
+          {/* 3D inset */}
+          {archScanMesh && (
+            <div style={{
+              position: "absolute",
+              bottom: 16,
+              right: 16,
+              width: 300,
+              height: 200,
+              borderRadius: 10,
+              overflow: "hidden",
+              border: "1px solid rgba(255,255,255,0.12)",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+              zIndex: 5,
+            }}>
+              <ErrorBoundary label="3D Canvas">
+                <SceneCanvas
+                  archScanMesh={archScanMesh}
+                  activeVariant={activeVariant}
+                  selectedToothId={selectedToothId}
+                  onSelectTooth={selectTooth}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ flex: 1, position: "relative", overflow: "hidden", padding: 12 }}>
+          {designTab === "3d" ? (
+            <ErrorBoundary label="3D Canvas">
+              <SceneCanvas
+                archScanMesh={archScanMesh}
+                activeVariant={activeVariant}
+                selectedToothId={selectedToothId}
+                onSelectTooth={selectTooth}
+              />
+            </ErrorBoundary>
+          ) : uploadedPhotos.length > 0 ? (
+            <ErrorBoundary label="Photo Overlay">
+              <PhotoOverlay
+                photo={uploadedPhotos[0]}
+                activeVariant={activeVariant}
+                selectedToothId={selectedToothId}
+                onSelectTooth={selectTooth}
+                onMoveTooth={moveTooth}
+              />
+            </ErrorBoundary>
+          ) : (
+            <div
+              style={{
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-muted)",
+                gap: 8
+              }}
+            >
+              <div>Import photos to use the photo overlay</div>
+              <div style={{ fontSize: 11, maxWidth: 320, textAlign: "center", lineHeight: 1.5 }}>
+                Upload a front smile photo in the Import tab, then switch here to
+                align the design with the patient&apos;s face. Drag the yellow L/R
+                commissure guides to match the smile corners.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tooth strip */}
       {activeVariant && (

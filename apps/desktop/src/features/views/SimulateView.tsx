@@ -1,43 +1,21 @@
 /**
- * SimulateView — Design workspace.
+ * SimulateView — Design stage left panel.
  *
- * Design is the third case job. Renders the existing DesignView while
- * adding a stage-aware header with before/after toggle and navigation CTA.
- *
- * Phase 7 full implementation targets:
- *  - Portrait-first layout (photo canvas as main, 3D as secondary panel)
- *  - Before / After split-screen toggle
- *  - Variant strip at bottom for quick design switching
- *  - "Looks good → Plan" CTA when a variant is generated
+ * This version of SimulateView is strictly for the design panel (tools, sliders, etc.).
+ * The 3D viewer is handled by the parent Workspace and is persistent.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useEffect } from "react";
 import { useImportStore } from "../../store/useImportStore";
 import { useDesignStore } from "../../store/useDesignStore";
-import {
-  getCaseWorkflowStage,
-  useViewportStore,
-} from "../../store/useViewportStore";
+import { useViewportStore } from "../../store/useViewportStore";
 import { StageBlockerScreen } from "../workflow/StageBlockerScreen";
-import { DesignView } from "./DesignView";
-import { AlignmentCalibrationWizard } from "../capture/AlignmentCalibrationWizard";
-import { useWorkspaceVariantStore } from "../experiments/workspaceVariantStore";
-import {
-  recordAlignmentAttempt,
-  recordFirstSimulationReady,
-} from "../experiments/workspaceMetrics";
+import { DesignPanel } from "./DesignPanel";
+import { recordFirstSimulationReady } from "../experiments/workspaceMetrics";
 
 // ── Stage header ──────────────────────────────────────────────────────────
 
-function SimulateStageHeader({
-  showWizard,
-  onToggleWizard,
-  hasPhotos,
-}: {
-  showWizard: boolean;
-  onToggleWizard: () => void;
-  hasPhotos: boolean;
-}) {
+function SimulateStageHeader() {
   const variants = useDesignStore((s) => s.variants);
   const setActiveView = useViewportStore((s) => s.setActiveView);
   const hasVariants = variants.length > 0;
@@ -59,7 +37,6 @@ function SimulateStageHeader({
           style={{
             fontSize: 11,
             fontWeight: 700,
-            letterSpacing: "0.08em",
             textTransform: "uppercase",
             color: "var(--text-muted, #8892a0)",
           }}
@@ -81,63 +58,29 @@ function SimulateStageHeader({
         )}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {/* Align Photo — always visible so users can discover it; disabled until photo uploaded */}
-        <button
-          onClick={onToggleWizard}
-          disabled={!hasPhotos}
-          style={{
-            padding: "6px 12px",
-            background: showWizard
-              ? "rgba(0,180,216,0.15)"
-              : "var(--bg-tertiary, #252b38)",
-            color: !hasPhotos
-              ? "var(--text-muted)"
-              : showWizard
-              ? "var(--accent, #00b4d8)"
-              : "var(--text-muted)",
-            border: "1px solid",
-            borderColor: showWizard
-              ? "var(--accent, #00b4d8)"
-              : "var(--border, #2a2f3b)",
-            borderRadius: 6,
-            fontSize: 12,
-            cursor: !hasPhotos ? "not-allowed" : "pointer",
-            opacity: !hasPhotos ? 0.5 : 1,
-          }}
-          title={
-            !hasPhotos
-              ? "Upload a patient photo first to use the alignment wizard"
-              : "Open the 2-point photo-to-scan alignment wizard"
-          }
-        >
-          {showWizard ? "Hide Alignment" : "Refine Alignment"}
-        </button>
-
-        {hasVariants && (
-          <button
-            onClick={() => setActiveView("review")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "6px 14px",
-              background: "var(--accent, #00b4d8)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 6,
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: "pointer",
-            }}
-          >
-            Continue to Review
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          </button>
-        )}
-      </div>
+      <button
+        onClick={() => setActiveView("review")}
+        disabled={!hasVariants}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "6px 14px",
+          background: "var(--accent, #00b4d8)",
+          color: "#fff",
+          border: "none",
+          borderRadius: 6,
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: hasVariants ? "pointer" : "not-allowed",
+          opacity: hasVariants ? 1 : 0.5,
+        }}
+      >
+        Continue
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+      </button>
     </div>
   );
 }
@@ -145,24 +88,11 @@ function SimulateStageHeader({
 // ── SimulateView ──────────────────────────────────────────────────────────
 
 export function SimulateView() {
-  const [showWizard, setShowWizard] = useState(false);
   const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
   const variants = useDesignStore((s) => s.variants);
-  const activeView = useViewportStore((s) => s.activeView);
   const setActiveView = useViewportStore((s) => s.setActiveView);
-  const workspaceVariant = useWorkspaceVariantStore((s) => s.variant);
   const hasPhotos = uploadedPhotos.length > 0;
-  const isWorkspaceVariant = workspaceVariant === "workspace";
-  const isActiveDesignStage = getCaseWorkflowStage(activeView) === "design";
-  const previousWizardOpenRef = useRef(false);
   const hasRecordedSimulationReadyRef = useRef(false);
-
-  useEffect(() => {
-    if (showWizard && !previousWizardOpenRef.current) {
-      recordAlignmentAttempt("design");
-    }
-    previousWizardOpenRef.current = showWizard;
-  }, [showWizard]);
 
   useEffect(() => {
     if (variants.length > 0 && !hasRecordedSimulationReadyRef.current) {
@@ -178,7 +108,6 @@ export function SimulateView() {
 
   return (
     <div
-      className={isWorkspaceVariant ? "studio-stage studio-stage--design" : undefined}
       style={{
         flex: 1,
         display: "flex",
@@ -187,43 +116,7 @@ export function SimulateView() {
         minHeight: 0,
       }}
     >
-      <SimulateStageHeader
-        showWizard={showWizard}
-        onToggleWizard={() => setShowWizard((v) => !v)}
-        hasPhotos={hasPhotos}
-      />
-
-      {!isWorkspaceVariant && isActiveDesignStage && (
-        <div className="guided-stage-panel" data-testid="guided-context-panel">
-          <div className="guided-stage-panel__header">
-            <div>
-              <div className="guided-stage-panel__eyebrow">
-                {variants.length > 0 ? "Ready for review" : "Recommended next"}
-              </div>
-              <div className="guided-stage-panel__title">
-                {variants.length > 0 ? "Move the concept into Review" : "Generate the first concept"}
-              </div>
-            </div>
-            <div className="guided-stage-panel__status">
-              <span
-                className={`guided-stage-chip ${hasPhotos ? "is-ready" : "is-pending"}`}
-              >
-                {hasPhotos ? "Photo ready" : "Photo needed"}
-              </span>
-              <span
-                className={`guided-stage-chip ${variants.length > 0 ? "is-ready" : "is-pending"}`}
-              >
-                {variants.length > 0 ? "Concept ready" : "Concept needed"}
-              </span>
-            </div>
-          </div>
-          <p className="guided-stage-panel__body">
-            {variants.length > 0
-              ? "Compare the proposal, check measurements, and approve it for presentation."
-              : "Create a concept here so Review can focus on validation instead of setup."}
-          </p>
-        </div>
-      )}
+      <SimulateStageHeader />
 
       {!hasPhotos ? (
         <StageBlockerScreen
@@ -233,35 +126,9 @@ export function SimulateView() {
           onAction={() => setActiveView("import")}
         />
       ) : (
-        <DesignView />
-      )}
-
-      {isWorkspaceVariant && (
-        <div className="studio-bottom-strip" data-testid="design-studio-strip">
-          <div className="studio-bottom-strip__section">
-            <span className="studio-bottom-strip__label">Design deck</span>
-            <span className="studio-bottom-strip__value">
-              {variants.length > 0
-                ? `${variants.length} concept${variants.length === 1 ? "" : "s"} live`
-                : "Generate your first concept"}
-            </span>
-          </div>
-          <div className="studio-bottom-strip__section">
-            <span className="studio-bottom-strip__label">Canvas</span>
-            <span className="studio-bottom-strip__value">Photo-first studio</span>
-          </div>
-          <div className="studio-bottom-strip__section">
-            <span className="studio-bottom-strip__label">Next</span>
-            <span className="studio-bottom-strip__value">
-              {variants.length > 0 ? "Review smile proposal" : "Align and generate"}
-            </span>
-          </div>
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          <DesignPanel />
         </div>
-      )}
-
-      {/* Full-screen alignment wizard modal — accessible from Simulate, not just Capture */}
-      {showWizard && (
-        <AlignmentCalibrationWizard onClose={() => setShowWizard(false)} />
       )}
     </div>
   );

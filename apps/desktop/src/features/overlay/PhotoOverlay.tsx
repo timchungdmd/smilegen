@@ -91,20 +91,21 @@ export function PhotoOverlay({
   const alignmentMarkers = useViewportStore((s) => s.alignmentMarkers);
   const updateAlignmentMarker = useViewportStore((s) => s.updateAlignmentMarker);
 
-  // Alignment store
-  const isAlignmentMode = useAlignmentStore((s) => s.isAlignmentMode);
-  const activeSurface = useAlignmentStore((s) => s.activeSurface);
-  const activeLandmarkId = useAlignmentStore((s) => s.activeLandmarkId);
-  const landmarks = useAlignmentStore((s) => s.landmarks);
-  const adjustmentDelta = useAlignmentStore((s) => s.adjustmentDelta);
-  const setPhotoLandmark = useAlignmentStore((s) => s.setPhotoLandmark);
-  const setActiveSurface = useAlignmentStore((s) => s.setActiveSurface);
-  const setScanInteractionMode = useAlignmentStore((s) => s.setScanInteractionMode);
-  const applyAdjustment = useAlignmentStore((s) => s.applyAdjustment);
-  const nudgeScale = useAlignmentStore((s) => s.nudgeScale);
-  const setOverlayTransform = useAlignmentStore((s) => s.setOverlayTransform);
-  const alignmentResult = useAlignmentStore((s) => s.alignmentResult);
-  const setViewDimensions = useAlignmentStore((s) => s.setViewDimensions);
+// Alignment store
+const isAlignmentMode = useAlignmentStore((s) => s.isAlignmentMode);
+const activeSurface = useAlignmentStore((s) => s.activeSurface);
+const activeLandmarkId = useAlignmentStore((s) => s.activeLandmarkId);
+const landmarks = useAlignmentStore((s) => s.landmarks);
+const adjustmentDelta = useAlignmentStore((s) => s.adjustmentDelta);
+const setPhotoLandmark = useAlignmentStore((s) => s.setPhotoLandmark);
+const setActiveLandmark = useAlignmentStore((s) => s.setActiveLandmark);
+const setActiveSurface = useAlignmentStore((s) => s.setActiveSurface);
+const setScanInteractionMode = useAlignmentStore((s) => s.setScanInteractionMode);
+const applyAdjustment = useAlignmentStore((s) => s.applyAdjustment);
+const nudgeScale = useAlignmentStore((s) => s.nudgeScale);
+const setOverlayTransform = useAlignmentStore((s) => s.setOverlayTransform);
+const alignmentResult = useAlignmentStore((s) => s.alignmentResult);
+const setViewDimensions = useAlignmentStore((s) => s.setViewDimensions);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -455,8 +456,27 @@ const handleLandmarkDragEnd = useCallback(() => {
   // Uses 3D projection when alignment result is available, falls back to Procrustes
   // or legacy arch calibration.
   const projectedTeeth = useMemo(() => {
-    if (alignmentResult && alignmentResult.transform) {
+    if (effectiveOverlayTransform && alignmentResult && alignmentResult.transform) {
       return teeth.map((tooth) => {
+        const midlineStl = landmarks.find((l) => l.id === "midline")?.modelCoord;
+        if (midlineStl) {
+          const pt = procrustesProject(
+            tooth.positionX,
+            tooth.positionY,
+            effectiveOverlayTransform,
+            midlineStl.x,
+            midlineStl.y
+          );
+          return {
+            tooth,
+            projected: {
+              x: pt.x,
+              y: pt.y,
+              scale: effectiveOverlayTransform.scale,
+              depthZ: 0,
+            },
+          };
+        }
         const params: ProjectionParams = {
           fov: 45,
           imageWidth: viewWidth,
@@ -487,7 +507,6 @@ const handleLandmarkDragEnd = useCallback(() => {
         };
       });
     }
-    // Fallback to existing behavior if no alignment result
     const midlineStl = landmarks.find((l) => l.id === "midline")?.modelCoord;
     if (effectiveOverlayTransform && midlineStl) {
       return teeth.map((tooth) => {
@@ -707,17 +726,38 @@ onMouseLeave={() => {
   setHoverPoint(null);
   handleLandmarkDragEnd();
 }}
-              onClick={(e) => {
-                if (isAlignmentMode && activeSurface === "photo" && activeLandmarkId) {
-                  e.stopPropagation();
-                  const pt = getSvgPoint(e);
-                  setPhotoLandmark(activeLandmarkId, pt.x / viewWidth, pt.y / viewHeight);
-                  // Auto-progression: after placing photo point, switch to scan surface
-                  setActiveSurface("scan");
-                  setScanInteractionMode("pick");
-                  return;
-                }
-              }}
+      onClick={(e) => {
+        if (isAlignmentMode && activeSurface === "photo" && activeLandmarkId) {
+          e.stopPropagation();
+          const pt = getSvgPoint(e);
+          setPhotoLandmark(activeLandmarkId, pt.x / viewWidth, pt.y / viewHeight);
+          
+      // Check if all required photo landmarks are placed
+      const state = useAlignmentStoreRaw.getState();
+      const requiredLandmarks = state.landmarks.filter(l => l.required);
+      const photoComplete = requiredLandmarks.filter(l => l.photoCoord !== null).length;
+
+      // If all required photo landmarks placed, auto-switch to scan
+      if (photoComplete >= requiredLandmarks.length) {
+        setActiveSurface("scan");
+        setScanInteractionMode("pick");
+        // Find first landmark without scan point
+        const firstScanNeeded = requiredLandmarks.find(l => !l.modelCoord);
+        if (firstScanNeeded) {
+          setActiveLandmark(firstScanNeeded.id);
+        }
+      } else {
+            // Auto-advance to next photo landmark
+            const nextPhoto = requiredLandmarks.find(
+              (l) => l.id !== activeLandmarkId && !l.photoCoord
+            );
+            if (nextPhoto) {
+              setActiveLandmark(nextPhoto.id);
+            }
+          }
+          return;
+        }
+      }}
             >
             {isAlignmentMode && activeSurface === "photo" && activeLandmark && activeLandmarkTarget && (
               <g data-testid="photo-overlay-placement-target">
@@ -761,31 +801,31 @@ onMouseLeave={() => {
         <circle
           cx={landmark.photoCoord.x * viewWidth}
           cy={landmark.photoCoord.y * viewHeight}
-          r={4.5}
+          r={1.125}
           fill="none"
           stroke={landmark.color}
-          strokeWidth={1.25}
-          strokeDasharray="2 1.5"
+          strokeWidth={1}
+          strokeDasharray="1.5 1"
           opacity={0.82}
         />
       )}
       <circle
         cx={landmark.photoCoord.x * viewWidth}
         cy={landmark.photoCoord.y * viewHeight}
-        r={6}
+        r={0.625}
         fill={landmark.color}
         stroke="#fff"
-        strokeWidth={1}
+        strokeWidth={0.75}
         style={{ cursor: "grab" }}
         onMouseDown={handleLandmarkDragStart(landmark.id)}
       />
       <text
         x={landmark.photoCoord.x * viewWidth}
-        y={landmark.photoCoord.y * viewHeight - 6}
+        cy={landmark.photoCoord.y * viewHeight - 1.5}
         textAnchor="middle"
         fill={landmark.color}
-        fontSize={7}
-        fontWeight={700}
+        fontSize={5}
+        fontWeight={600}
         style={{ pointerEvents: "none" }}
       >
         {landmark.label}
@@ -795,19 +835,19 @@ onMouseLeave={() => {
 })}
 
           {/* Ghost marker for hover preview */}
-          {hoverPoint && activeLandmark && (
-            <circle
-              cx={hoverPoint.x * viewWidth}
-              cy={hoverPoint.y * viewHeight}
-              r={6}
-              fill="none"
-              stroke={activeLandmark.color}
-              strokeWidth={2}
-              strokeDasharray="3 2"
-              opacity={0.7}
-              style={{ pointerEvents: "none" }}
-            />
-          )}
+      {hoverPoint && activeLandmark && (
+        <circle
+          cx={hoverPoint.x * viewWidth}
+          cy={hoverPoint.y * viewHeight}
+          r={1.125}
+          fill="none"
+          stroke={activeLandmark.color}
+          strokeWidth={1}
+          strokeDasharray="2 1.5"
+          opacity={0.7}
+          style={{ pointerEvents: "none" }}
+        />
+      )}
 
           {/* Alignment markers (arch curve + crosshairs) */}
             {!isAlignmentMode && (

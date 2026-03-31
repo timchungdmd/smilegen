@@ -33,17 +33,18 @@ test("captures session timing across stage changes", () => {
 test("counts mode switches only when the active route changes", () => {
   startWorkspaceSession("guided", 0);
 
+  // Note: "align" is now mapped to "import" in the workflow, so it doesn't count as a separate mode
   trackWorkspaceView("import", 0);
-  trackWorkspaceView("align", 50);
+  trackWorkspaceView("design", 50);
   trackWorkspaceView("design", 100);
-  trackWorkspaceView("design", 125);
+  trackWorkspaceView("review", 125);
 
   const snapshot = getWorkspaceMetricsSnapshot();
 
   expect(snapshot.modeSwitchCount).toBe(2);
   expect(snapshot.stageEntryCount.import).toBe(1);
-  expect(snapshot.stageEntryCount.align).toBe(1);
   expect(snapshot.stageEntryCount.design).toBe(1);
+  expect(snapshot.stageEntryCount.review).toBe(1);
 });
 
 test("tracks alignment retries after the first calibration attempt", () => {

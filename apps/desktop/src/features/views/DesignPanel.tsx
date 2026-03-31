@@ -29,27 +29,32 @@ function PhotoWorkspacePanel() {
   const activeLandmarkId = useAlignmentStore((s) => s.activeLandmarkId);
   const scanInteractionMode = useAlignmentStore((s) => s.scanInteractionMode);
   const landmarks = useAlignmentStore((s) => s.landmarks);
+  const alignmentResult = useAlignmentStore((s) => s.alignmentResult);
   const setAlignmentMode = useAlignmentStore((s) => s.setAlignmentMode);
   const setActiveSurface = useAlignmentStore((s) => s.setActiveSurface);
   const setActiveLandmark = useAlignmentStore((s) => s.setActiveLandmark);
   const setScanInteractionMode = useAlignmentStore((s) => s.setScanInteractionMode);
   const clearLandmark = useAlignmentStore((s) => s.clearLandmark);
-  const clearAllLandmarks = useAlignmentStore((s) => s.clearAllLandmarks);
-  const getCompletedPairCount = useAlignmentStore((s) => s.getCompletedPairCount);
-  const canSolve = useAlignmentStore((s) => s.canSolve);
-  const hasRequiredLandmarks = useAlignmentStore((s) => s.hasRequiredLandmarks);
-  const overlayTransform = useAlignmentStore((s) => s.overlayTransform);
-  const adjustmentDelta = useAlignmentStore((s) => s.adjustmentDelta);
-  const applyAdjustment = useAlignmentStore((s) => s.applyAdjustment);
-  const resetAdjustment = useAlignmentStore((s) => s.resetAdjustment);
-  const canEnterAlignment = uploadedPhotos.length > 0 && Boolean(archScanMesh);
-  const completedPairs = getCompletedPairCount();
-  const requiredRemaining = landmarks.filter(
-    (landmark) => landmark.required && (!landmark.photoCoord || !landmark.modelCoord)
-  );
+const clearAllLandmarks = useAlignmentStore((s) => s.clearAllLandmarks);
+const getCompletedPairCount = useAlignmentStore((s) => s.getCompletedPairCount);
+const canSolve = useAlignmentStore((s) => s.canSolve);
+const hasRequiredLandmarks = useAlignmentStore((s) => s.hasRequiredLandmarks);
+const overlayTransform = useAlignmentStore((s) => s.overlayTransform);
+const adjustmentDelta = useAlignmentStore((s) => s.adjustmentDelta);
+const applyAdjustment = useAlignmentStore((s) => s.applyAdjustment);
+const resetAdjustment = useAlignmentStore((s) => s.resetAdjustment);
+const solve = useAlignmentStore((s) => s.solve);
+const canEnterAlignment = uploadedPhotos.length > 0 && Boolean(archScanMesh);
   const requiredLandmarks = landmarks.filter((l) => l.required);
   const optionalLandmarks = landmarks.filter((l) => !l.required);
   const fitAssessment = overlayTransform ? assessOverlayFitQuality(overlayTransform.residualError) : null;
+
+  // Compute workflow phases
+  const photoCompleteCount = requiredLandmarks.filter(l => l.photoCoord !== null).length;
+  const scanCompleteCount = requiredLandmarks.filter(l => l.modelCoord !== null).length;
+  const allPhotosPlaced = photoCompleteCount >= 5;
+  const allScansPlaced = scanCompleteCount >= 5;
+  const isAligned = alignmentResult !== null;
 
   const getLandmarkStatus = (landmark: typeof landmarks[number]) => {
     if (landmark.photoCoord && landmark.modelCoord) return "Matched";
@@ -57,6 +62,9 @@ function PhotoWorkspacePanel() {
     if (landmark.modelCoord) return "Photo missing";
     return "Pending";
   };
+
+  // Determine current phase
+  const currentPhase = !allPhotosPlaced ? "photo" : !allScansPlaced ? "scan" : "align";
 
   return (
     <div
@@ -78,164 +86,214 @@ function PhotoWorkspacePanel() {
           </div>
         </section>
 
+      <section className="inspector-card inspector-card--subtle">
+        <div style={{ padding: 14, display: "grid", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>
+              Landmark Alignment
+            </div>
+            <button
+              data-testid="photo-panel-alignment-toggle"
+              className="btn btn-sm"
+              onClick={() => setAlignmentMode(!isAlignmentMode)}
+              disabled={!canEnterAlignment}
+            >
+              {isAlignmentMode ? "Exit" : "Start Alignment"}
+            </button>
+          </div>
+
+          {/* Phase Progress */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{
+              padding: "4px 8px",
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 600,
+              background: currentPhase === "photo" ? "var(--accent)" : allPhotosPlaced ? "var(--accent)" : "var(--bg-tertiary)",
+              color: currentPhase === "photo" || allPhotosPlaced ? "#fff" : "var(--text-muted)",
+            }}>
+              1. Photo ({photoCompleteCount}/5)
+            </div>
+            <span style={{ color: "var(--text-muted)" }}>→</span>
+            <div style={{
+              padding: "4px 8px",
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 600,
+              background: currentPhase === "scan" ? "var(--accent)" : allScansPlaced ? "var(--accent)" : "var(--bg-tertiary)",
+              color: currentPhase === "scan" || allScansPlaced ? "#fff" : "var(--text-muted)",
+            }}>
+              2. Scan ({scanCompleteCount}/5)
+            </div>
+            <span style={{ color: "var(--text-muted)" }}>→</span>
+            <div style={{
+              padding: "4px 8px",
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 600,
+              background: isAligned ? "var(--accent)" : "var(--bg-tertiary)",
+              color: isAligned ? "#fff" : "var(--text-muted)",
+            }}>
+              3. Align
+            </div>
+          </div>
+
+          {/* Phase-specific instructions */}
+          {!isAlignmentMode ? (
+            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+              Click "Start Alignment" to begin placing landmarks.
+            </div>
+) : currentPhase === "photo" ? (
+  <div style={{ fontSize: 12, color: "var(--accent)" }}>
+    Click on the photo to place each landmark. Complete all required landmarks before moving to scan.
+  </div>
+          ) : currentPhase === "scan" ? (
+            <div style={{ fontSize: 12, color: "var(--accent)" }}>
+              Click "Place on Scan" then click on the 3D model to place each landmark.
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: "var(--accent)" }}>
+              All landmarks placed! Click "Align" to compute the overlay.
+            </div>
+          )}
+
+          {/* Align button - only shown when both phases complete */}
+          {allPhotosPlaced && allScansPlaced && isAlignmentMode && !isAligned && (
+            <button
+              data-testid="photo-panel-align-button"
+              className="btn btn-primary btn-sm"
+              style={{ marginTop: 4 }}
+              onClick={() => {
+                solve();
+              }}
+            >
+              Align Now
+            </button>
+          )}
+
+          {isAligned && (
+            <div data-testid="photo-panel-fit-review" style={{
+              display: "grid",
+              gap: 4,
+              padding: "10px 12px",
+              borderRadius: 10,
+              border: "1px solid var(--accent)",
+              background: "rgba(0, 180, 216, 0.08)",
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>
+                Alignment Complete
+                <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 400, color: "var(--text-secondary)" }}>
+                  ±{alignmentResult?.meanErrorPx.toFixed(1)}px ({alignmentResult?.quality})
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Fine-tune overlay adjustment sliders — visible when aligned */}
+      {isAligned && !isAlignmentMode && (
+        <section className="inspector-card inspector-card--subtle">
+          <div style={{ display: "grid", gap: 8, padding: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>Fine-Tune Overlay</div>
+            <div style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                Scale: {Math.round(adjustmentDelta.scaleFactor * 100)}%
+              </span>
+              <input
+                type="range" min={0.7} max={1.3} step={0.005}
+                value={adjustmentDelta.scaleFactor}
+              />
+            </div>
+            <div style={{ display: "grid", gap: 4 }}>
+              <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                Rotation: {(adjustmentDelta.rotation * 180 / Math.PI).toFixed(1)}°
+              </span>
+              <input
+                type="range" min={-0.26} max={0.26} step={0.002}
+                value={adjustmentDelta.rotation}
+                onInput={(e) => {
+                  const newRot = Number((e.target as HTMLInputElement).value);
+                  applyAdjustment({ rotation: newRot - adjustmentDelta.rotation });
+                }}
+                style={{ accentColor: "var(--accent)" }}
+              />
+            </div>
+            <button
+              type="button" className="btn btn-sm"
+              onClick={() => resetAdjustment()}
+              style={{ color: "var(--text-secondary)", marginTop: 2 }}
+            >
+              Reset Adjustments
+            </button>
+          </div>
+        </section>
+      )}
+
+      {isAlignmentMode && (
         <section className="inspector-card inspector-card--subtle">
           <div style={{ padding: 14, display: "grid", gap: 10 }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>
-                Landmark Matching
-              </div>
-              <button
-                data-testid="photo-panel-alignment-toggle"
-                className="btn btn-sm"
-                onClick={() => setAlignmentMode(!isAlignmentMode)}
-                disabled={!canEnterAlignment}
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <span
+                data-testid="photo-panel-clear-all-warning"
+                style={{ fontSize: 11, color: "var(--danger, #ef476f)", fontWeight: 600 }}
               >
-                {isAlignmentMode ? "Exit Alignment" : "Landmark Align"}
+                Clears every photo and scan landmark.
+              </span>
+              <button
+                type="button"
+                className="btn btn-sm"
+                data-testid="photo-panel-clear-all"
+                onClick={() => clearAllLandmarks()}
+                disabled={landmarks.every((landmark) => !landmark.photoCoord && !landmark.modelCoord)}
+                style={{
+                  borderColor: "var(--danger, #ef476f)",
+                  color: "var(--danger, #ef476f)",
+                  background: "rgba(239, 71, 111, 0.08)",
+                }}
+              >
+                Clear All
               </button>
             </div>
 
-            <div data-testid="photo-panel-summary" style={{ display: "grid", gap: 4 }}>
-              <div style={{ fontSize: 12, color: "var(--text-primary)" }}>
-                {completedPairs} matched pair{completedPairs === 1 ? "" : "s"}
-                {overlayTransform?.wasFlipCorrected && (
-                  <span style={{ marginLeft: 8, fontSize: 10, color: "#00b4d8" }}>✓ flip corrected</span>
-                )}
-              </div>
-              <div style={{ fontSize: 12, color: canSolve() ? "var(--accent)" : "var(--text-secondary)" }}>
-                {isAlignmentMode
-                  ? canSolve()
-                    ? "Overlay live — refine points or fine-tune with sliders below."
-                    : "Place at least 2 matched pairs to activate the overlay."
-                  : "Use landmark alignment to register the scan overlay to the photo."}
-              </div>
-              <div data-testid="photo-panel-required-summary" style={{ fontSize: 11, color: hasRequiredLandmarks() ? "var(--accent)" : "var(--text-secondary)" }}>
-                {hasRequiredLandmarks()
-                  ? "Required landmarks complete."
-                  : `Remaining: ${requiredRemaining.map((l) => l.label).join(", ")}`}
-              </div>
-            </div>
-
-            {fitAssessment && canSolve() && (
-              <div
-                data-testid="photo-panel-fit-review"
-                style={{
-                  display: "grid",
-                  gap: 4,
-                  padding: "10px 12px",
-                  borderRadius: 10,
-                  border: "1px solid",
-                  borderColor:
-                    fitAssessment.tone === "good" ? "var(--accent)"
-                    : fitAssessment.tone === "warning" ? "#f59e0b"
-                    : "var(--danger, #ef476f)",
-                  background:
-                    fitAssessment.tone === "good" ? "rgba(0, 180, 216, 0.08)"
-                    : fitAssessment.tone === "warning" ? "rgba(245, 158, 11, 0.08)"
-                    : "rgba(239, 71, 111, 0.08)",
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-primary)" }}>
-                  {fitAssessment.label}
-                  {overlayTransform && (
-                    <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 400, color: "var(--text-secondary)" }}>
-                      ±{overlayTransform.residualError.toFixed(1)}px
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                  {fitAssessment.guidance}
-                </div>
-              </div>
-            )}
-
-            {/* Fine-tune overlay adjustment sliders — visible when overlay is live */}
-            {canSolve() && overlayTransform && !isAlignmentMode && (
-              <div style={{ display: "grid", gap: 8, padding: "10px 12px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-secondary)" }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>Fine-Tune Overlay</div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                    Scale: {Math.round(adjustmentDelta.scaleFactor * 100)}%
-                  </span>
-                  <input
-                    type="range" min={0.7} max={1.3} step={0.005}
-                    value={adjustmentDelta.scaleFactor}
-                  />
-                </div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                    Rotation: {(adjustmentDelta.rotation * 180 / Math.PI).toFixed(1)}°
-                  </span>
-                  <input
-                    type="range" min={-0.26} max={0.26} step={0.002}
-                    value={adjustmentDelta.rotation}
-                    onInput={(e) => {
-                      const newRot = Number((e.target as HTMLInputElement).value);
-                      applyAdjustment({ rotation: newRot - adjustmentDelta.rotation });
-                    }}
-                    style={{ accentColor: "var(--accent)" }}
-                  />
-                </div>
+            {/* Surface buttons - only show relevant one based on phase */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {currentPhase === "photo" && (
                 <button
-                  type="button" className="btn btn-sm"
-                  onClick={() => resetAdjustment()}
-                  style={{ color: "var(--text-secondary)", marginTop: 2 }}
+                  data-testid="photo-panel-surface-photo"
+                  className="btn btn-sm"
+                  onClick={() => setActiveSurface("photo")}
+                  style={{
+                    borderColor: activeSurface === "photo" ? "var(--accent)" : undefined,
+                    color: activeSurface === "photo" ? "var(--accent)" : undefined,
+                    fontWeight: 600,
+                  }}
                 >
-                  Reset Adjustments
+                  Place on Photo
                 </button>
-              </div>
-            )}
-
-            {isAlignmentMode && (
-              <>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <span
-                    data-testid="photo-panel-clear-all-warning"
-                    style={{ fontSize: 11, color: "var(--danger, #ef476f)", fontWeight: 600 }}
-                  >
-                    Clears every photo and scan landmark. Replace points manually.
-                  </span>
+              )}
+              {currentPhase === "scan" && (
+                <>
                   <button
-                    type="button"
+                    data-testid="photo-panel-surface-scan"
                     className="btn btn-sm"
-                    data-testid="photo-panel-clear-all"
-                    onClick={() => clearAllLandmarks()}
-                    disabled={landmarks.every((landmark) => !landmark.photoCoord && !landmark.modelCoord)}
+        onClick={() => {
+          setActiveSurface("scan");
+          setScanInteractionMode("pick");
+          // Find first landmark that has photo but needs scan
+          const firstNeedsScan = landmarks.find(l => l.photoCoord && !l.modelCoord);
+          if (firstNeedsScan) {
+            setActiveLandmark(firstNeedsScan.id);
+          }
+        }}
                     style={{
-                      borderColor: "var(--danger, #ef476f)",
-                      color: "var(--danger, #ef476f)",
-                      background: "rgba(239, 71, 111, 0.08)",
+                      borderColor: activeSurface === "scan" ? "var(--accent)" : undefined,
+                      color: activeSurface === "scan" ? "var(--accent)" : undefined,
+                      fontWeight: 600,
                     }}
                   >
-                    Clear All Landmarks
+                    Place on Scan
                   </button>
-                </div>
-
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button
-                    data-testid="photo-panel-surface-photo"
-                    className="btn btn-sm"
-                    onClick={() => setActiveSurface("photo")}
-                    style={{
-                      borderColor: activeSurface === "photo" ? "var(--accent)" : undefined,
-                      color: activeSurface === "photo" ? "var(--accent)" : undefined,
-                    }}
-                  >
-                    Place on Photo
-                  </button>
-        <button
-          data-testid="photo-panel-surface-scan"
-          className="btn btn-sm"
-          onClick={() => {
-            setActiveSurface("scan");
-            setScanInteractionMode("pick");
-          }}
-          style={{
-            borderColor: activeSurface === "scan" ? "var(--accent)" : undefined,
-            color: activeSurface === "scan" ? "var(--accent)" : undefined,
-          }}
-        >
-          Place on Scan
-        </button>
                   {activeSurface === "scan" && (
                     <button
                       data-testid="photo-panel-scan-mode"
@@ -253,83 +311,84 @@ function PhotoWorkspacePanel() {
                       {scanInteractionMode === "pick" ? "Picking On" : "Pick on Scan"}
                     </button>
                   )}
-                </div>
+                </>
+              )}
+            </div>
 
-                {/* Required landmarks — midline + centrals */}
-                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>Required</div>
-                <div style={{ display: "grid", gap: 6 }}>
-                  {requiredLandmarks.map((landmark) => {
-                    const complete = Boolean(landmark.photoCoord && landmark.modelCoord);
-                    const active = activeLandmarkId === landmark.id;
-                    return (
-                      <div
-                        key={landmark.id}
-                        data-testid={`photo-panel-card-${landmark.id}`}
-                        style={{
-                          display: "grid", gap: 6, padding: "8px 10px",
-                          borderRadius: 8,
-                          border: `1px solid ${!complete ? landmark.color : active ? landmark.color : "var(--border)"}`,
-                          background: !complete ? `${landmark.color}12` : active ? `${landmark.color}18` : "var(--bg-secondary)",
-                        }}
-                      >
-                        <button type="button" data-testid={`photo-panel-landmark-${landmark.id}`}
-                          onClick={() => setActiveLandmark(landmark.id)}
-                          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, border: "none", background: "transparent", color: "var(--text-primary)", cursor: "pointer", textAlign: "left", padding: 0 }}
-                        >
-                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: landmark.color, flexShrink: 0 }} />
-                            <span style={{ fontSize: 12, fontWeight: 600 }}>{landmark.label}</span>
-                          </span>
-                          <span data-testid={`photo-panel-status-${landmark.id}`} style={{ fontSize: 10, color: complete ? landmark.color : "var(--text-secondary)" }}>
-                            {getLandmarkStatus(landmark)}
-                          </span>
-                        </button>
-                        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                          <button type="button" className="btn btn-sm" data-testid={`photo-panel-clear-${landmark.id}`}
-                            onClick={() => clearLandmark(landmark.id)}
-                            disabled={!landmark.photoCoord && !landmark.modelCoord}
-                          >Clear</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+            {/* Required landmarks — midline + centrals + canines */}
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 2 }}>Required</div>
+            <div style={{ display: "grid", gap: 6 }}>
+              {requiredLandmarks.map((landmark) => {
+                const complete = Boolean(landmark.photoCoord && landmark.modelCoord);
+                const active = activeLandmarkId === landmark.id;
+                return (
+                  <div
+                    key={landmark.id}
+                    data-testid={`photo-panel-card-${landmark.id}`}
+                    style={{
+                      display: "grid", gap: 6, padding: "8px 10px",
+                      borderRadius: 8,
+                      border: `1px solid ${!complete ? landmark.color : active ? landmark.color : "var(--border)"}`,
+                      background: !complete ? `${landmark.color}12` : active ? `${landmark.color}18` : "var(--bg-secondary)",
+                    }}
+                  >
+                    <button type="button" data-testid={`photo-panel-landmark-${landmark.id}`}
+                      onClick={() => setActiveLandmark(landmark.id)}
+                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, border: "none", background: "transparent", color: "var(--text-primary)", cursor: "pointer", textAlign: "left", padding: 0 }}
+                    >
+                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: landmark.color, flexShrink: 0 }} />
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{landmark.label}</span>
+                      </span>
+                      <span data-testid={`photo-panel-status-${landmark.id}`} style={{ fontSize: 10, color: complete ? landmark.color : "var(--text-secondary)" }}>
+                        {getLandmarkStatus(landmark)}
+                      </span>
+                    </button>
+                    <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                      <button type="button" className="btn btn-sm" data-testid={`photo-panel-clear-${landmark.id}`}
+                        onClick={() => clearLandmark(landmark.id)}
+                        disabled={!landmark.photoCoord && !landmark.modelCoord}
+                      >Clear</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
-                {/* Optional landmarks — laterals, canines, premolars */}
-                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 4, marginBottom: 2 }}>Optional (improve accuracy)</div>
-                <div style={{ display: "grid", gap: 4 }}>
-                  {optionalLandmarks.map((landmark) => {
-                    const complete = Boolean(landmark.photoCoord && landmark.modelCoord);
-                    const active = activeLandmarkId === landmark.id;
-                    return (
-                      <div key={landmark.id} data-testid={`photo-panel-card-${landmark.id}`}
-                        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 10px", borderRadius: 6, border: `1px solid ${active ? landmark.color : "var(--border)"}`, background: active ? `${landmark.color}12` : "transparent" }}
-                      >
-                        <button type="button" data-testid={`photo-panel-landmark-${landmark.id}`}
-                          onClick={() => setActiveLandmark(landmark.id)}
-                          style={{ display: "flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: complete ? "var(--text-primary)" : "var(--text-secondary)", cursor: "pointer", padding: 0, flex: 1 }}
-                        >
-                          <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: complete ? landmark.color : "var(--border)", flexShrink: 0 }} />
-                          <span style={{ fontSize: 11 }}>{landmark.label}</span>
-                          <span data-testid={`photo-panel-status-${landmark.id}`} style={{ fontSize: 10, color: complete ? landmark.color : "var(--text-secondary)", marginLeft: "auto" }}>
-                            {getLandmarkStatus(landmark)}
-                          </span>
-                        </button>
-                        <button type="button" className="btn btn-sm" data-testid={`photo-panel-clear-${landmark.id}`}
-                          onClick={() => clearLandmark(landmark.id)}
-                          disabled={!landmark.photoCoord && !landmark.modelCoord}
-                          style={{ fontSize: 10, padding: "2px 6px" }}
-                        >×</button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
+            {/* Optional landmarks — laterals, premolars */}
+            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: 4, marginBottom: 2 }}>Optional (improve accuracy)</div>
+            <div style={{ display: "grid", gap: 4 }}>
+              {optionalLandmarks.map((landmark) => {
+                const complete = Boolean(landmark.photoCoord && landmark.modelCoord);
+                const active = activeLandmarkId === landmark.id;
+                return (
+                  <div key={landmark.id} data-testid={`photo-panel-card-${landmark.id}`}
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 10px", borderRadius: 6, border: `1px solid ${active ? landmark.color : "var(--border)"}`, background: active ? `${landmark.color}12` : "transparent" }}
+                  >
+                    <button type="button" data-testid={`photo-panel-landmark-${landmark.id}`}
+                      onClick={() => setActiveLandmark(landmark.id)}
+                      style={{ display: "flex", alignItems: "center", gap: 8, border: "none", background: "transparent", color: complete ? "var(--text-primary)" : "var(--text-secondary)", cursor: "pointer", padding: 0, flex: 1 }}
+                    >
+                      <span aria-hidden="true" style={{ width: 6, height: 6, borderRadius: 999, background: complete ? landmark.color : "var(--border)", flexShrink: 0 }} />
+                      <span style={{ fontSize: 11 }}>{landmark.label}</span>
+                      <span data-testid={`photo-panel-status-${landmark.id}`} style={{ fontSize: 10, color: complete ? landmark.color : "var(--text-secondary)", marginLeft: "auto" }}>
+                        {getLandmarkStatus(landmark)}
+                      </span>
+                    </button>
+                    <button type="button" className="btn btn-sm" data-testid={`photo-panel-clear-${landmark.id}`}
+                      onClick={() => clearLandmark(landmark.id)}
+                      disabled={!landmark.photoCoord && !landmark.modelCoord}
+                      style={{ fontSize: 10, padding: "2px 6px" }}
+                    >×</button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </section>
+      )}
 
-        <section className="inspector-card">
+      <section className="inspector-card">
           <div style={{ padding: 14, display: "grid", gap: 10 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-secondary)" }}>
               Overlay Controls

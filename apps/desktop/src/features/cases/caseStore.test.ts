@@ -6,4 +6,5 @@ test("creates a case with workflow and presentation flags", () => {
   expect(draft.workflowState).toBe("draft");
   expect(draft.presentationReady).toBe(false);
   expect(draft.exportBlocked).toBe(false);
+  expect(draft.artifacts).toEqual([]);
 });

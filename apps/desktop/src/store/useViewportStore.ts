@@ -33,12 +33,15 @@ export type {
 } from "./useOverlayStore";
 
 export type {
-  ScanReferencePoint,
-  ScanReferencePoints,
+  AlignmentSurface,
+  ScanInteractionMode,
+  AlignmentLandmarkId,
+  AlignmentLandmark,
 } from "./useAlignmentStore";
 
 export type {
   DesignTab,
+  LayoutMode,
 } from "./useCanvasStore";
 
 export {
@@ -65,9 +68,6 @@ type CombinedState = ReturnType<typeof useNavigationStore.getState> &
 // ─── Combined getState ───────────────────────────────────────────────────────
 
 function enhancedSetActiveView(view: import("./useNavigationStore").ViewId): void {
-  if (normalizeViewId(view) === "design" && useAlignmentStore.getState().scanReferencePoints) {
-    useAlignmentStore.getState().setShowPhotoIn3D(true);
-  }
   useNavigationStore.getState().setActiveView(view);
 }
 
@@ -126,16 +126,31 @@ export const useViewportStore = Object.assign(useViewportStoreHook, {
   setState: (partial: Partial<CombinedState>) => {
     // Distribute state updates to the appropriate stores
     const navKeys = new Set(["activeView"]);
-    const overlayKeys = new Set([
-      "showOverlay", "overlayOpacity", "showSmileArc", "showMidline",
-      "showGingivalLine", "midlineX", "smileArcY", "gingivalLineY",
-      "leftCommissureX", "rightCommissureX", "alignmentMarkers",
+/**
+   * Overlay state keys — owned by useOverlayStore.
+   * These fields control guide positions, opacity, and alignment markers.
+   * They are persisted both to localStorage (via zustand/persist) and to
+   * IndexedDB (via SavedCase.overlaySettings in caseDb.ts).
+   */
+  const overlayKeys = new Set([
+    "showOverlay", "overlayOpacity", "showSmileArc", "showMidline",
+    "showGingivalLine", "midlineX", "smileArcY", "gingivalLineY",
+    "smileArcLeftOffset", "smileArcRightOffset",
+    "leftCommissureX", "rightCommissureX", "alignmentMarkers",
+  ]);
+    const alignmentKeys = new Set([
+      "isAlignmentMode",
+      "activeSurface",
+      "activeLandmarkId",
+      "scanInteractionMode",
+      "landmarks",
+      "solvedView",
+      "lastSolveError",
     ]);
-    const alignmentKeys = new Set(["showPhotoIn3D", "scanReferencePoints"]);
     const canvasKeys = new Set([
       "photoZoom", "photoPanX", "photoPanY", "cameraDistance",
       "activeCollectionId", "designTab", "gimbalMode", "activeGimbalAxis",
-      "hiddenLayers",
+      "layoutMode", "hiddenLayers", "meshScale", "meshOpacity",
     ]);
 
     const navPartial: Record<string, unknown> = {};

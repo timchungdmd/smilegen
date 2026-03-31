@@ -14,12 +14,12 @@ const GUIDE_STEPS = [
   {
     n: 3,
     title: "Refine in the Design View",
-    text: "Use the 3D View tab to inspect and rotate the smile design. Switch to Photo Overlay to see teeth projected onto the patient photo. Drag the yellow L/R commissure guides to match the patient's smile corners for accurate photo-to-scan alignment."
+    text: "The viewer stays constant and shows the imported scan with the photo overlay on top. Use the 3D View and Photo Overlay tabs to change the left workspace panel controls, not the viewer itself. Use manual landmark matching to place identical reference points on the photo and scan."
   },
   {
     n: 4,
     title: "Adjust Proportions & Plan",
-    text: "In the right sidebar, use the Smile Plan panel to adjust width/length scale, incisal curve, and midline offset. Choose a proportion mode: Golden Ratio (1.618:1:0.618) enforces classical dental aesthetics; Percentage mode uses 23%:15%:12% rule; Library mode uses raw tooth dimensions."
+    text: "In the left workspace panel, adjust width/length scale, incisal curve, midline offset, and overlay visibility. Choose a proportion mode: Golden Ratio (1.618:1:0.618) enforces classical dental aesthetics; Percentage mode uses 23%:15%:12% rule; Library mode uses raw tooth dimensions."
   },
   {
     n: 5,
@@ -35,9 +35,7 @@ const GUIDE_STEPS = [
 
 /** Collapsible "How to Use SmileGen" guide panel. Manages its own open/closed state. */
 export function HowToGuidePanel() {
-  const [open, setOpen] = useState(() => {
-    return !localStorage.getItem("smilegen-ftux-seen");
-  });
+  const [open, setOpen] = useState(false);
 
   const handleToggle = () => {
     setOpen((v) => {
@@ -54,7 +52,8 @@ export function HowToGuidePanel() {
       style={{
         background: "var(--bg-tertiary)",
         border: "1px solid var(--border)",
-        overflow: "visible",   // allow flex parent to compute correct height
+        overflow: "hidden",
+        flexShrink: 0,
       }}
     >
       <div
@@ -73,7 +72,7 @@ export function HowToGuidePanel() {
       </div>
 
       {open && (
-        <div className="panel-body" style={{ display: "grid", gap: 14, fontSize: 12, lineHeight: 1.6, maxHeight: 260, overflowY: "auto" }}>
+        <div className="panel-body" style={{ display: "grid", gap: 16, fontSize: "12.5px", lineHeight: "1.7" }}>
           {GUIDE_STEPS.map((step) => (
             <div key={step.n} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
               <span className="guide-step-number">{step.n}</span>
@@ -96,7 +95,7 @@ export function HowToGuidePanel() {
             <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", fontSize: 11, color: "var(--text-muted)", alignItems: "center" }}>
               <kbd>Ctrl+Z</kbd><span>Undo</span>
               <kbd>Ctrl+Y</kbd><span>Redo</span>
-              <kbd>1-5</kbd><span>Switch views (Import, Design, Compare, Export, Cases)</span>
+              <kbd>1-5</kbd><span>Switch workflow stages</span>
               <kbd>Esc</kbd><span>Deselect tooth</span>
             </div>
           </div>

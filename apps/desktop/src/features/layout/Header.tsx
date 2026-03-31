@@ -18,7 +18,9 @@ import {
 const WORKFLOW_STEPS: { id: CaseWorkflowStage; label: string; done: (args: {
   hasAssetsReady: boolean;
   hasGeneratedDesign: boolean;
+  hasAlignmentReady: boolean;
   isReviewReady: boolean;
+  hasPresentationReady: boolean;
   statusLabel: string;
 }) => boolean }[] = [
   {
@@ -27,14 +29,9 @@ const WORKFLOW_STEPS: { id: CaseWorkflowStage; label: string; done: (args: {
     done: ({ hasAssetsReady }) => hasAssetsReady,
   },
   {
-    id: "align",
-    label: "Align",
-    done: ({ hasAssetsReady }) => hasAssetsReady,
-  },
-  {
     id: "design",
     label: "Design",
-    done: ({ hasGeneratedDesign }) => hasGeneratedDesign,
+    done: ({ hasGeneratedDesign, hasAlignmentReady }) => hasGeneratedDesign && hasAlignmentReady,
   },
   {
     id: "review",
@@ -44,7 +41,12 @@ const WORKFLOW_STEPS: { id: CaseWorkflowStage; label: string; done: (args: {
   {
     id: "present",
     label: "Present",
-    done: ({ statusLabel }) => statusLabel === "prepared",
+    done: ({ hasPresentationReady }) => hasPresentationReady,
+  },
+  {
+    id: "handoff",
+    label: "Handoff",
+    done: ({ statusLabel }) => statusLabel === "exported",
   },
 ];
 
@@ -55,7 +57,9 @@ function getGuidedStepState(args: {
   activeStage: CaseWorkflowStage | null;
   hasAssetsReady: boolean;
   hasGeneratedDesign: boolean;
+  hasAlignmentReady: boolean;
   isReviewReady: boolean;
+  hasPresentationReady: boolean;
   statusLabel: string;
 }): GuidedStepState {
   const {
@@ -63,7 +67,9 @@ function getGuidedStepState(args: {
     activeStage,
     hasAssetsReady,
     hasGeneratedDesign,
+    hasAlignmentReady,
     isReviewReady,
+    hasPresentationReady,
     statusLabel,
   } = args;
   const activeStepIndex = activeStage
@@ -73,7 +79,9 @@ function getGuidedStepState(args: {
   const isStepCompleted = WORKFLOW_STEPS[stepIndex]?.done({
     hasAssetsReady,
     hasGeneratedDesign,
+    hasAlignmentReady,
     isReviewReady,
+    hasPresentationReady,
     statusLabel,
   }) ?? false;
 
@@ -88,17 +96,14 @@ function getGuidedStepState(args: {
   switch (step) {
     case "import":
       return hasAssetsReady ? "completed" : "available";
-    case "align":
-      if (hasAssetsReady) {
-        return activeStage === "import" ? "available" : "completed";
-      }
-      return "available";
     case "design":
       return isStepCompleted ? "completed" : hasAssetsReady ? "available" : "locked";
     case "review":
-      return isStepCompleted ? "completed" : hasGeneratedDesign ? "available" : "locked";
+      return isStepCompleted ? "completed" : hasGeneratedDesign && hasAlignmentReady ? "available" : "locked";
     case "present":
-      return isStepCompleted ? "completed" : statusLabel === "prepared" ? "available" : "locked";
+      return isStepCompleted ? "completed" : isReviewReady ? "available" : "locked";
+    case "handoff":
+      return isStepCompleted ? "completed" : hasPresentationReady ? "available" : "locked";
     default:
       return "locked";
   }
@@ -108,7 +113,7 @@ export function Header() {
   const caseRecord = useCaseStore((s) => s.caseRecord);
   const activeView = useViewportStore((s) => s.activeView);
   const activeVariant = useDesignStore(selectActiveVariant);
-  const quickGenerate = useDesignStore((s) => s.quickGenerate);
+  const generateDesign = useDesignStore((s) => s.generateDesign);
   const downloadActiveStl = useDesignStore((s) => s.downloadActiveStl);
   const uploadedPhotos = useImportStore((s) => s.uploadedPhotos);
   const archScanName = useImportStore((s) => s.archScanName);
@@ -116,6 +121,7 @@ export function Header() {
   const uploadedToothModels = useImportStore((s) => s.uploadedToothModels);
   const generatedDesign = useDesignStore((s) => s.generatedDesign);
   const readyForDoctor = useDesignStore((s) => s.readyForDoctor);
+  const hasAlignmentReady = useViewportStore((s) => s.getCompletedPairCount() >= 3);
   const variants = useDesignStore((s) => s.variants);
   const [showNewCaseDialog, setShowNewCaseDialog] = useState(false);
   const workspaceVariant = useWorkspaceVariantStore((s) => s.variant);
@@ -182,7 +188,7 @@ export function Header() {
         <div className="workspace-header-focus">
           <span className="workspace-header-focus__eyebrow">Clinical design studio</span>
           <span className="workspace-header-focus__title">
-            Switch freely between Import, Align, Design, Review, and Present
+            Switch freely between Import, Design, Review, Present, and Handoff
           </span>
         </div>
       ) : (
@@ -193,7 +199,9 @@ export function Header() {
               activeStage,
               hasAssetsReady,
               hasGeneratedDesign: Boolean(generatedDesign),
+              hasAlignmentReady,
               isReviewReady: readyForDoctor || statusLabel === "prepared",
+              hasPresentationReady: caseRecord?.presentationReady ?? false,
               statusLabel,
             });
 
@@ -314,11 +322,11 @@ export function Header() {
         >
           <IconRedo />
         </button>
-        {canQuickGenerate && !activeVariant && (
-          <button className="btn btn-primary btn-sm" onClick={quickGenerate}>
-            Generate Design
-          </button>
-        )}
+          {canQuickGenerate && !activeVariant && (
+            <button className="btn btn-primary btn-sm" onClick={generateDesign}>
+              Generate Design
+            </button>
+          )}
         {activeVariant && (
           <button className="btn btn-sm" onClick={downloadActiveStl}>
             <IconDownload width={14} height={14} />

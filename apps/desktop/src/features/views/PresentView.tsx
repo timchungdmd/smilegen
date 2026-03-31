@@ -79,6 +79,7 @@ export function PresentView() {
   const isWorkspaceVariant = workspaceVariant === "workspace";
   const hasRecordedPresentationRef = useRef(false);
   const [presentationMode, setPresentationMode] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const isPresentStage = getCaseWorkflowStage(activeView) === "present";
@@ -91,6 +92,9 @@ export function PresentView() {
     if (!generatedDesign || !isPresentStage) {
       hasRecordedPresentationRef.current = false;
     }
+    return () => {
+      hasRecordedPresentationRef.current = false;
+    };
   }, [activeView, generatedDesign]);
 
   const isPresentationApproved =
@@ -124,6 +128,7 @@ export function PresentView() {
 
   const handleExport = useCallback(async () => {
     if (!primaryPhoto) return;
+    setIsExporting(true);
 
     const canvas = document.createElement("canvas");
     canvas.width = 1920;
@@ -137,9 +142,17 @@ export function PresentView() {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.src = primaryPhoto;
-    await new Promise<void>((resolve) => {
-      img.onload = () => resolve();
-    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("Failed to load image"));
+      });
+    } catch {
+      console.error("Failed to load image for export");
+      return;
+    } finally {
+      setIsExporting(false);
+    }
 
     const scale = Math.min(1920 / img.width, 1080 / img.height);
     const w = img.width * scale;
@@ -213,7 +226,7 @@ export function PresentView() {
         <div className="presentation-action-zone" data-testid="present-action-zone" style={{ display: "flex", gap: 8 }}>
           {primaryPhoto && (
             <>
-              <button
+                        <button
                 onClick={() => setPresentationMode(true)}
                 data-testid="present-to-patient-button"
                 style={{
@@ -232,7 +245,7 @@ export function PresentView() {
               >
                 Present to Patient
               </button>
-              <button
+                        <button
                 onClick={handleExport}
                 data-testid="export-png-button"
                 style={{
@@ -254,7 +267,7 @@ export function PresentView() {
             </>
           )}
           <button
-            onClick={() => setActiveView("present")}
+            onClick={() => setActiveView("handoff")}
             style={{
               display: "flex",
               alignItems: "center",
@@ -269,7 +282,7 @@ export function PresentView() {
               cursor: "pointer",
             }}
           >
-            Share with Team
+            Open Handoff
           </button>
         </div>
       </div>

@@ -6,8 +6,15 @@ export function SettingsPanel() {
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
 
   useEffect(() => {
-    setSettings(loadSettings());
+    const s = loadSettings();
+    setSettings(s);
+    document.documentElement.setAttribute("data-theme", s.theme);
   }, []);
+
+  // Keep DOM in sync whenever theme changes
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", settings.theme);
+  }, [settings.theme]);
 
   function handleChange(updates: Partial<AppSettings>) {
     const next = updateSettings(updates);

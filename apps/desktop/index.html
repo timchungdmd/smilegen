@@ -2,13 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; connect-src 'self';">
+    <!-- CSP is applied by Tauri in production; omitted here so Vite dev scripts work -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SmileGen - Dental CAD</title>
     <style>
-      body { background: #0c1117; }
+      /* Inline theme tokens for instant FOUC prevention before CSS bundle loads */
+      :root { --bg-app: #0c1117; }
+      [data-theme="light"] { --bg-app: #f0f4f8; }
+      body { background: var(--bg-app); }
     </style>
+    <script>
+      /* Apply persisted theme before first paint to prevent flash */
+      try {
+        var s = JSON.parse(localStorage.getItem('smilegen-settings') || '{}');
+        if (s.theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+      } catch (_) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

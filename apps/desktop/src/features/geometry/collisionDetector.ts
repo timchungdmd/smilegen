@@ -4,7 +4,13 @@ export interface CollisionResult {
   toothA: string;
   toothB: string;
   type: "overlap" | "gap" | "contact";
-  distance: number; // negative = overlap, positive = gap, ~0 = contact
+  distance: number;
+}
+
+export interface OBB {
+  center: { x: number; y: number; z: number };
+  axes: { x: { x: number; y: number }; y: { x: number; y: number } };
+  halfExtents: { x: number; y: number; z: number };
 }
 
 interface ToothEntry {
@@ -15,12 +21,29 @@ interface ToothEntry {
   depth: number;
 }
 
-const CONTACT_THRESHOLD = 0.1; // mm
+const CONTACT_THRESHOLD = 0.1;
 
-/**
- * Check collisions between all adjacent tooth pairs.
- * Uses AABB (axis-aligned bounding box) for fast detection.
- */
+export function intersectOBB(a: OBB, b: OBB): boolean {
+  const distZ = Math.abs(a.center.z - b.center.z);
+  const sumHalfZ = a.halfExtents.z + b.halfExtents.z;
+  if (distZ > sumHalfZ) return false;
+
+  const relP = { x: b.center.x - a.center.x, y: b.center.y - a.center.y };
+  const axes = [a.axes.x, a.axes.y, b.axes.x, b.axes.y];
+
+  for (const axis of axes) {
+    const projA = a.halfExtents.x * Math.abs(axis.x * a.axes.x.x + axis.y * a.axes.x.y) +
+      a.halfExtents.y * Math.abs(axis.x * a.axes.y.x + axis.y * a.axes.y.y);
+    const projB = b.halfExtents.x * Math.abs(axis.x * b.axes.x.x + axis.y * b.axes.x.y) +
+      b.halfExtents.y * Math.abs(axis.x * b.axes.y.x + axis.y * b.axes.y.y);
+    const dist = Math.abs(relP.x * axis.x + relP.y * axis.y);
+
+    if (dist > projA + projB) return false;
+  }
+
+  return true;
+}
+
 export function detectCollisions(
   teeth: ReadonlyArray<ToothEntry>
 ): CollisionResult[] {

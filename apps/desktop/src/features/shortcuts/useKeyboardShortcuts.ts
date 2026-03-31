@@ -6,7 +6,7 @@ import { useCaseStore } from "../../store/useCaseStore";
 
 const VIEW_ACTIONS: Record<string, ViewId> = {
   "view:import": "import",
-  "view:align": "align",
+  "view:align": "design",
   "view:design": "design",
   "view:review": "review",
   "view:present": "present",
