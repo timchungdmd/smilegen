@@ -365,15 +365,21 @@ const handleLandmarkDragEnd = useCallback(() => {
   const photoZoomRef = useRef(photoZoom);
   photoZoomRef.current = photoZoom;
 
-  const handleZoom = useCallback(
-    (delta: number) => {
-      const oldZ = photoZoomRef.current;
-      const newZ = Math.max(0.1, Math.min(10, oldZ + delta));
-      if (oldZ === newZ) return;
-      setPhotoZoom(newZ);
-    },
-    [setPhotoZoom]
-  );
+const handleZoom = useCallback(
+  (delta: number) => {
+    const oldZ = photoZoomRef.current;
+    const newZ = Math.max(0.1, Math.min(10, oldZ + delta));
+    if (oldZ === newZ) return;
+    const scaleRatio = newZ / oldZ;
+    const centerX = fit.offsetX + photoPanX + fit.w / 2;
+    const centerY = fit.offsetY + photoPanY + fit.h / 2;
+    const newPhotoPanX = centerX - (centerX - photoPanX) * scaleRatio - fit.offsetX;
+    const newPhotoPanY = centerY - (centerY - photoPanY) * scaleRatio - fit.offsetY;
+    setPhotoPan(newPhotoPanX, newPhotoPanY);
+    setPhotoZoom(newZ);
+  },
+  [setPhotoZoom, setPhotoPan, fit, photoPanX, photoPanY]
+);
 
   const teeth = activeVariant?.teeth ?? [];
   const activeLandmark = landmarks.find((landmark) => landmark.id === activeLandmarkId) ?? null;

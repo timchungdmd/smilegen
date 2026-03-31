@@ -32,7 +32,7 @@ export function PhotoOverlayToolbar({ onZoom }: { onZoom: (delta: number) => voi
       {/* Zoom controls */}
       <button
         className="btn-icon"
-        onClick={() => onZoom(-0.15)}
+        onClick={() => onZoom(-0.10)}
         title="Zoom out"
         style={{ color: "#8b949e", padding: 4 }}
       >
@@ -45,7 +45,7 @@ export function PhotoOverlayToolbar({ onZoom }: { onZoom: (delta: number) => voi
       </span>
       <button
         className="btn-icon"
-        onClick={() => onZoom(0.15)}
+        onClick={() => onZoom(0.10)}
         title="Zoom in"
         style={{ color: "#8b949e", padding: 4 }}
       >

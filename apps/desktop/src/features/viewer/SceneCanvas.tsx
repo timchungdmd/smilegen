@@ -180,24 +180,7 @@ function AutoFrame({
 
   // Compute visual centroid based on scan bounds and teeth positions
   const visualCentroid = useMemo(() => {
-    const centroid = getVisualCentroidFromBounds(bounds, teeth);
-    // Debug: log centroid calculation
-    if (bounds) {
-      const scanCenter = new THREE.Vector3(
-        (bounds.minX + bounds.maxX) / 2,
-        (bounds.minY + bounds.maxY) / 2,
-        (bounds.minZ + bounds.maxZ) / 2
-      );
-      const teethCount = teeth?.length ?? 0;
-      console.log('[SceneCanvas] Visual centroid:', { 
-        x: centroid.x.toFixed(2), 
-        y: centroid.y.toFixed(2), 
-        z: centroid.z.toFixed(2),
-        teethCount,
-        scanCenter: { x: scanCenter.x.toFixed(2), y: scanCenter.y.toFixed(2), z: scanCenter.z.toFixed(2) }
-      });
-    }
-    return centroid;
+    return getVisualCentroidFromBounds(bounds, teeth);
   }, [bounds, teeth]);
 
   useEffect(() => {
@@ -391,16 +374,7 @@ function StlMeshView({
         onPointerDown={(event) => {
           if (!pickEnabled || !onPickPoint) return;
           event.stopPropagation();
-
-          console.log('=== 3D Landmark Pick ===');
-          console.log('World point:', event.point);
-          console.log('Center:', center);
-          console.log('Transform:', transform);
-
           const modelCoord = inverseLandmarkTransform(event.point, center, transform);
-          console.log('Model coord:', modelCoord);
-          console.log('========================');
-
           onPickPoint(modelCoord);
         }}
         onPointerMove={(event) => {
@@ -437,12 +411,20 @@ onPointerLeave={() => {
           side={THREE.DoubleSide}
         />
       </mesh>
-      {landmarks
-        .filter((landmark) => landmark.modelCoord)
-        .map((landmark) => {
-          const worldPos = applyLandmarkTransform(landmark.modelCoord!, center, transform);
-          const visual = getScanLandmarkVisualState(landmark, activeLandmarkId);
-          return (
+        {landmarks
+          .filter((landmark) => landmark.modelCoord)
+          .map((landmark) => {
+            const worldPos = applyLandmarkTransform(landmark.modelCoord!, center, transform);
+            const visual = getScanLandmarkVisualState(landmark, activeLandmarkId);
+            
+            console.log('=== Render 3D Landmark ===');
+            console.log('Landmark:', landmark.id);
+            console.log('modelCoord:', landmark.modelCoord!.x.toFixed(2), landmark.modelCoord!.y.toFixed(2), landmark.modelCoord!.z.toFixed(2));
+            console.log('Center:', center.x.toFixed(2), center.y.toFixed(2), center.z.toFixed(2));
+            console.log('World pos:', worldPos[0].toFixed(2), worldPos[1].toFixed(2), worldPos[2].toFixed(2));
+            console.log('=========================');
+            
+            return (
             <group
               key={landmark.id}
               position={worldPos}
